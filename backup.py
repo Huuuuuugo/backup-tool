@@ -67,10 +67,8 @@ def get_changes(
 
 def save_changes(file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8):
     head_dir = os.path.join(backup_dir, "head/")
-    parts_dir = os.path.join(backup_dir, "parts/")
     head_file_path = os.path.join(head_dir, file_path)
     os.makedirs(head_dir, exist_ok=True)
-    os.makedirs(parts_dir, exist_ok=True)
 
     changes = get_changes(file_path)
     timestamp = float(f"{time.time():.2f}")
@@ -78,6 +76,7 @@ def save_changes(file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8)
     changes_dict = {
         "timestamp": timestamp,
         "message": message,
+        "file_name": file_path,
         "type": changes[0].value,
         "changes": changes[1],
     }
@@ -105,8 +104,30 @@ def save_changes(file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8)
         changes_json.write(json.dumps(json_content, indent=2))
 
 
+def list_changes(backup_dir: str = ".bak/"):
+    head_dir = os.path.join(backup_dir, "head/")
+    os.makedirs(head_dir, exist_ok=True)
+
+    # read json file containing the changes
+    if os.path.exists(f"{backup_dir}.changes"):
+        with open(f"{backup_dir}.changes", "r") as changes_json:
+            json_content = changes_json.read()
+            json_content = json.loads(json_content)
+    else:
+        json_content = []
+
+    while len(json_content):
+        entry = json_content.pop()
+        print(entry["timestamp"])
+        print(entry["message"])
+        print(entry["file_name"])
+        print(entry["type"])
+        input()
+
+
 if __name__ == "__main__":
     from pprint import pprint
     import sys
 
-    save_changes(sys.argv[1])
+    # save_changes(sys.argv[1])
+    list_changes()
