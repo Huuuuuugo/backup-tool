@@ -1,16 +1,20 @@
+import time
+import shutil
 import enum
+import json
+import uuid
 import os
 
 
 class FileState(enum.Enum):
-    UPDATE = 0  # represents a file being partially altered
-    ADD = 1  # represents a file being tracked for the first time
-    DELETE = 2  # represensts a file being deleted from tracking
-    NO_FILE = 3  # represents a file that isn't being tracked and doesn't exist
+    UPDATE = "U"  # represents a file being partially altered
+    ADD = "A"  # represents a file being tracked for the first time
+    DELETE = "D"  # represensts a file being deleted from tracking
+    NO_FILE = "E"  # represents a file that isn't being tracked and doesn't exist
 
 
 def get_changes(
-    file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8
+    file_path: str, backup_dir: str = ".bak/", chunk_size: int = 32
 ) -> tuple[FileState, dict]:
     head_dir = os.path.join(backup_dir, "head/")
     head_file_path = os.path.join(head_dir, file_path)
@@ -49,18 +53,58 @@ def get_changes(
 
                             # runs if the chunk was created
                             elif not head_chunk:
-                                add.append((chunk_index, new_chunk))
+                                add.append((chunk_index, new_chunk.decode()))
 
                             else:
-                                update.append((chunk_index, new_chunk))
+                                update.append((chunk_index, new_chunk.decode()))
 
                         chunk_index += 1
 
             return (FileState.UPDATE, {"add": add, "delete": delete, "update": update})
 
 
+def save_changes(file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8):
+    head_dir = os.path.join(backup_dir, "head/")
+    parts_dir = os.path.join(backup_dir, "parts/")
+    head_file_path = os.path.join(head_dir, file_path)
+    os.makedirs(head_dir, exist_ok=True)
+    os.makedirs(parts_dir, exist_ok=True)
+
+    changes = get_changes(file_path)
+    timestamp = float(f"{time.time():.2f}")
+    message = ""
+    changes_dict = {
+        "timestamp": timestamp,
+        "message": message,
+        "type": changes[0].value,
+        "changes": changes[1],
+    }
+    match changes[0]:
+        case FileState.UPDATE:
+            shutil.copy(file_path, head_file_path)
+
+        case FileState.ADD:
+            shutil.copy(file_path, head_file_path)
+
+        case FileState.DELETE:
+            os.remove(head_file_path)
+
+    # read json file containing the changes
+    if os.path.exists(f"{backup_dir}.changes"):
+        with open(f"{backup_dir}.changes", "r") as changes_json:
+            json_content = changes_json.read()
+            json_content = json.loads(json_content)
+    else:
+        json_content = []
+
+    # save the new changes to the json file
+    with open(f"{backup_dir}.changes", "w") as changes_json:
+        json_content.append(changes_dict)
+        changes_json.write(json.dumps(json_content, indent=2))
+
+
 if __name__ == "__main__":
     from pprint import pprint
     import sys
 
-    pprint(get_changes(sys.argv[1]))
+    save_changes(sys.argv[1])
