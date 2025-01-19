@@ -22,14 +22,16 @@ def get_changes(
     # runs if the file is being added
     if not os.path.exists(head_file_path):
         if os.path.exists(file_path):
-            return (FileState.ADD, {})
+            with open(file_path, "r") as new:
+                return (FileState.ADD, {"add": new.read()})
         else:
             return (FileState.NO_FILE, {})
 
     else:
         # runs if the file was deleted
         if not os.path.exists(file_path):
-            return (FileState.DELETE, {})
+            with open(head_file_path, "r") as head:
+                return (FileState.DELETE, {"delete": head.read()})
 
         # runs if the file is being updated
         else:
