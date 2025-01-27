@@ -1,133 +1,94 @@
-import time
-import shutil
-import enum
-import json
-import uuid
-import os
+def get_changes(old_file_path: str, new_file_path: str):
+    with open(old_file_path, "rb") as old_file:
+        with open(new_file_path, "rb") as new_file:
+            new_file_pos = 0
+            old_file_pos = 0
+            old_byte = 1
+            new_byte = 1
+            changes = []
+            while old_byte and new_byte:
+                old_byte = old_file.read(1)
+                new_byte = new_file.read(1)
+                new_file_pos += 1
+                old_file_pos += 1
 
+                if old_byte != new_byte:
+                    offset = 0
+                    diff_type = ""
+                    diff = {"rmv": [[old_byte], 0], "add": [[new_byte], 0]}
+                    rmv_break = False
+                    add_break = False
 
-class FileState(enum.Enum):
-    UPDATE = "U"  # represents a file being partially altered
-    ADD = "A"  # represents a file being tracked for the first time
-    DELETE = "D"  # represensts a file being deleted from tracking
-    NO_FILE = "E"  # represents a file that isn't being tracked and doesn't exist
+                    # TODO FIXME: it gets stuck on this loop some times (probably related to a byte being empty)
+                    while True:
+                        next_old_byte = old_file.read(1)
+                        next_new_byte = new_file.read(1)
+                        offset += 1
+                        # test new_byte against old_file bytes
+                        # gets the bytes removed
 
+                        if new_byte == next_old_byte:
+                            diff["rmv"][1] = old_file_pos
+                            rmv_break = True
+                        else:
+                            # save the different bytes
+                            diff["rmv"][0].append(next_old_byte)
 
-def get_changes(
-    file_path: str, backup_dir: str = ".bak/", chunk_size: int = 32
-) -> tuple[FileState, dict]:
-    head_dir = os.path.join(backup_dir, "head/")
-    head_file_path = os.path.join(head_dir, file_path)
+                        # test old_byte against new_file bytes
+                        # gets the bytes added
+                        if old_byte == next_new_byte:
+                            diff["add"][1] = old_file_pos
+                            add_break = True
+                        else:
+                            diff["add"][0].append(next_new_byte)
 
-    # runs if the file is being added
-    if not os.path.exists(head_file_path):
-        if os.path.exists(file_path):
-            with open(file_path, "r") as new:
-                return (FileState.ADD, {"add": new.read()})
-        else:
-            return (FileState.NO_FILE, {})
+                        # decides weather to break and what's the type of the changes
+                        if rmv_break and add_break:
+                            diff_type = "bth"
+                            break
 
-    else:
-        # runs if the file was deleted
-        if not os.path.exists(file_path):
-            with open(head_file_path, "r") as head:
-                return (FileState.DELETE, {"delete": head.read()})
-
-        # runs if the file is being updated
-        else:
-            add = []
-            update = []
-            delete = []
-            chunk_index = 0
-            with open(head_file_path, "rb") as head:
-                with open(file_path, "rb") as new:
-                    new_chunk = 1
-                    head_chunk = 1
-                    while new_chunk or head_chunk:
-                        new_chunk = new.read(chunk_size)
-                        head_chunk = head.read(chunk_size)
-
-                        # runs if the chunks are different
-                        if new_chunk != head_chunk:
-                            # runs if something was deleted
-                            if not new_chunk:
-                                delete.append(chunk_index)
-
-                            # runs if the chunk was created
-                            elif not head_chunk:
-                                add.append((chunk_index, new_chunk.decode()))
-
+                        elif rmv_break or add_break:
+                            if rmv_break:
+                                diff_type = "rmv"
                             else:
-                                update.append((chunk_index, new_chunk.decode()))
+                                diff_type = "add"
+                            break
 
-                        chunk_index += 1
+                    # save the smallest one
+                    # offset the file where the main byte (old_byte or new_byte, wichever generated the smallest diff) came from to the position of said byte
+                    match diff_type:
+                        case "add":
+                            new_file_pos += offset
+                            new_file.seek(new_file_pos)
+                            old_file.seek(old_file_pos)
 
-            return (FileState.UPDATE, {"add": add, "delete": delete, "update": update})
+                            changes.append((diff["add"], "add"))
 
+                        case "rmv":
+                            old_file_pos += offset
+                            new_file.seek(new_file_pos)
+                            old_file.seek(old_file_pos)
 
-def save_changes(file_path: str, backup_dir: str = ".bak/", chunk_size: int = 8):
-    head_dir = os.path.join(backup_dir, "head/")
-    head_file_path = os.path.join(head_dir, file_path)
-    os.makedirs(head_dir, exist_ok=True)
+                            changes.append((diff["rmv"], "rmv"))
 
-    changes = get_changes(file_path)
-    timestamp = float(f"{time.time():.2f}")
-    message = ""
-    changes_dict = {
-        "timestamp": timestamp,
-        "message": message,
-        "file_name": file_path,
-        "type": changes[0].value,
-        "changes": changes[1],
-    }
-    match changes[0]:
-        case FileState.UPDATE:
-            shutil.copy(file_path, head_file_path)
+                        # TODO FIXME: this is resulting in a slight offset on the next diff
+                        case "bth":
+                            old_file_pos += offset - 1
+                            new_file_pos += offset
+                            new_file.seek(new_file_pos)
+                            old_file.seek(old_file_pos)
 
-        case FileState.ADD:
-            shutil.copy(file_path, head_file_path)
+                            diff["rmv"][0].append(old_file.read(1))
+                            old_file_pos += 1
 
-        case FileState.DELETE:
-            os.remove(head_file_path)
+                            changes.append((diff["add"], "add"))
+                            changes.append((diff["rmv"], "rmv"))
 
-    # read json file containing the changes
-    if os.path.exists(f"{backup_dir}.changes"):
-        with open(f"{backup_dir}.changes", "r") as changes_json:
-            json_content = changes_json.read()
-            json_content = json.loads(json_content)
-    else:
-        json_content = []
-
-    # save the new changes to the json file
-    with open(f"{backup_dir}.changes", "w") as changes_json:
-        json_content.append(changes_dict)
-        changes_json.write(json.dumps(json_content, indent=2))
-
-
-def list_changes(backup_dir: str = ".bak/"):
-    head_dir = os.path.join(backup_dir, "head/")
-    os.makedirs(head_dir, exist_ok=True)
-
-    # read json file containing the changes
-    if os.path.exists(f"{backup_dir}.changes"):
-        with open(f"{backup_dir}.changes", "r") as changes_json:
-            json_content = changes_json.read()
-            json_content = json.loads(json_content)
-    else:
-        json_content = []
-
-    while len(json_content):
-        entry = json_content.pop()
-        print(entry["timestamp"])
-        print(entry["message"])
-        print(entry["file_name"])
-        print(entry["type"])
-        input()
+    return changes
 
 
 if __name__ == "__main__":
-    from pprint import pprint
-    import sys
-
-    # save_changes(sys.argv[1])
-    list_changes()
+    changes = get_changes("examples/ex-1.txt", "examples/ex-2.txt")
+    for diff in changes:
+        diff_list = [char.decode() for char in diff[0][0]]
+        print(f"{diff[1]} | {str(diff[0][1]).zfill(5)} | <{"".join(diff_list)}>")
