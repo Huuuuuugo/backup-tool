@@ -6,12 +6,17 @@ def get_changes(old_file_path: str, new_file_path: str):
             old_byte = 1
             new_byte = 1
             changes = []
+
+            # cycle through each byte on both files simultaneously untill any of them
+            # reaches its end
             while old_byte and new_byte:
                 old_byte = old_file.read(1)
                 new_byte = new_file.read(1)
                 new_file_pos += 1
                 old_file_pos += 1
 
+                # if the bytes are different, get the entire chain of different bytes
+                # and label it as an addition (add) or deletion (rmv)
                 if old_byte != new_byte:
                     offset = 0
                     diff_type = ""
@@ -19,69 +24,113 @@ def get_changes(old_file_path: str, new_file_path: str):
                     rmv_break = False
                     add_break = False
 
-                    # TODO FIXME: it gets stuck on this loop some times (probably related to a byte being empty)
+                    # cycle through every different byte on both files until a
+                    # similar byte is found or one of the files reaches its end
                     while True:
                         next_old_byte = old_file.read(1)
                         next_new_byte = new_file.read(1)
                         offset += 1
+
                         # test new_byte against old_file bytes
                         # gets the bytes removed
-
                         if new_byte == next_old_byte:
-                            diff["rmv"][1] = old_file_pos - 1
-                            rmv_break = True
+                            diff["rmv"][1] = old_file_pos - 1  # set the position where the change beggins
+                            rmv_break = True  # sets the flag for breaking and labeling the change as an deletion
                         else:
                             # save the different bytes
-                            diff["rmv"][0] += next_old_byte
+                            diff["rmv"][0] += next_old_byte  # append the current byte to the chain of different bytes
 
                         # test old_byte against new_file bytes
                         # gets the bytes added
                         if old_byte == next_new_byte:
-                            diff["add"][1] = old_file_pos - 1
-                            add_break = True
+                            diff["add"][1] = old_file_pos - 1  # set the position where the change beggins
+                            add_break = True  # sets the flag for breaking and labeling the change as an adition
                         else:
-                            diff["add"][0] += next_new_byte
+                            diff["add"][0] += next_new_byte  # append the current byte to the chain of different bytes
 
-                        # decides weather to break and what's the type of the changes
-                        if rmv_break and add_break:
-                            diff_type = "bth"
-                            break
-
-                        elif rmv_break or add_break:
-                            if rmv_break:
+                        # check if any of the bytes are empty, wich means one of the files are already finished
+                        if not (next_old_byte and next_new_byte):
+                            # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
+                            if not next_new_byte:
                                 diff_type = "rmv"
-                            else:
+                                diff["rmv"][1] = old_file_pos - 1
+
+                                # check if the length of the content being changed is gratter tha one byte
+                                # if this is true, it means that there's no more bytes avaliable on the other file
+                                # and the last set shouldn't be reused (as it only contains the very last byte, which would endup being reused forever)
+                                if len(diff["rmv"][0]) > 1:
+                                    new_file_pos -= 1  # move the cursor of the finalized file one byte back,
+                                    # allowing the same last set of bytes to be tested against all the bytes of the larger file
+                                break
+
+                            # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
+                            if not next_old_byte:
                                 diff_type = "add"
+                                diff["add"][1] = old_file_pos - 1
+
+                                # check if the length of the content being changed is gratter tha one byte
+                                # if this is true, it means that there's no more bytes avaliable on the other file
+                                # and the last set shouldn't be reused (as it only contains the very last byte, which would endup being reused forever)
+                                if len(diff["add"][0]) > 1:
+                                    old_file_pos -= 1  # move the cursor of the finalized file one byte back,
+                                    # allowing the same last set of bytes to be tested against all the bytes of the larger file
+                                break
+
+                        # check if both or any of the normal break conditions were met
+                        # and specify how the changes should be labeled
+                        elif rmv_break or add_break:
+                            if rmv_break and add_break:
+                                diff_type = "bth"  # label changes as both
+                            elif rmv_break:
+                                diff_type = "rmv"  # label changes as deletion
+                            else:
+                                diff_type = "add"  # label changes as addition
                             break
 
-                    # save the smallest one
-                    # offset the file where the main byte (old_byte or new_byte, wichever generated the smallest diff) came from to the position of said byte
+                    # save the changes according to the label and move the cursor of the file that
+                    # generated the unused diff back to the beggining of the byte chain
                     match diff_type:
                         case "add":
                             new_file_pos += offset
-                            new_file.seek(new_file_pos)
-                            old_file.seek(old_file_pos)
+                            new_file.seek(new_file_pos)  # move to the end of the byte chain
+                            old_file.seek(old_file_pos)  # move to the beggining of the byte chain
 
-                            changes.append((diff["add"], "add"))
+                            changes.append((diff["add"], "add"))  # save change
 
                         case "rmv":
                             old_file_pos += offset
-                            new_file.seek(new_file_pos)
-                            old_file.seek(old_file_pos)
+                            new_file.seek(new_file_pos)  # move to the beggining of the byte chain
+                            old_file.seek(old_file_pos)  # move to the end of the byte chain
 
-                            changes.append((diff["rmv"], "rmv"))
+                            changes.append((diff["rmv"], "rmv"))  # save change
 
                         case "bth":
                             old_file_pos += offset - 1
                             new_file_pos += offset - 1
+
+                            # move both files to the end of the chain
                             new_file.seek(new_file_pos)
                             old_file.seek(old_file_pos)
 
+                            # TODO FIXME: this might contain some issue as it assumes the next byte must always
+                            # be deleted, there might be a scenario where this is not the case.
+                            # probably need to add a check for that
+                            # add the next byte on the old_file to the chain of deletions
                             diff["rmv"][0] += old_file.read(1)
                             old_file_pos += 1
 
                             changes.append((diff["add"], "add"))
                             changes.append((diff["rmv"], "rmv"))
+
+            # get all the content that was left on any of the files
+            remaining_old_bytes = old_file.read()
+            remaining_new_bytes = new_file.read()
+
+            # save the reminder content to the list of changes accordingly
+            if remaining_old_bytes:
+                changes.append(([remaining_old_bytes, old_file_pos], "rmv"))
+            elif remaining_new_bytes:
+                changes.append(([remaining_new_bytes, old_file_pos], "add"))
 
     return changes
 
@@ -90,7 +139,6 @@ def apply_changes(changes, file_path: str):
     with open(file_path, "rb+") as file:
         offset = 0
         for change in changes:
-            print(offset)
             bytes_changed = change[0][0]
             size = len(bytes_changed)
             position = change[0][1] + offset
@@ -133,7 +181,16 @@ def apply_changes(changes, file_path: str):
 
 
 if __name__ == "__main__":
-    changes = get_changes("examples/ex-1.txt", "examples/ex-2.txt")
+    old_file = "examples/ex-2.txt"
+    new_file = "examples/ex-1.txt"
+    changes = get_changes(old_file, new_file)
     print(changes)
 
-    apply_changes(changes, "examples/ex-1.txt")
+    with open(old_file, "rb") as file:
+        original_content = file.read()
+
+    apply_changes(changes, old_file)
+
+    input()
+    with open(old_file, "wb") as file:
+        original_content = file.write(original_content)
