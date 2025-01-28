@@ -15,7 +15,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                 if old_byte != new_byte:
                     offset = 0
                     diff_type = ""
-                    diff = {"rmv": [[old_byte], 0], "add": [[new_byte], 0]}
+                    diff = {"rmv": [old_byte, 0], "add": [new_byte, 0]}
                     rmv_break = False
                     add_break = False
 
@@ -28,19 +28,19 @@ def get_changes(old_file_path: str, new_file_path: str):
                         # gets the bytes removed
 
                         if new_byte == next_old_byte:
-                            diff["rmv"][1] = old_file_pos
+                            diff["rmv"][1] = old_file_pos - 1
                             rmv_break = True
                         else:
                             # save the different bytes
-                            diff["rmv"][0].append(next_old_byte)
+                            diff["rmv"][0] += next_old_byte
 
                         # test old_byte against new_file bytes
                         # gets the bytes added
                         if old_byte == next_new_byte:
-                            diff["add"][1] = old_file_pos
+                            diff["add"][1] = old_file_pos - 1
                             add_break = True
                         else:
-                            diff["add"][0].append(next_new_byte)
+                            diff["add"][0] += next_new_byte
 
                         # decides weather to break and what's the type of the changes
                         if rmv_break and add_break:
@@ -71,14 +71,13 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                             changes.append((diff["rmv"], "rmv"))
 
-                        # TODO FIXME: this is resulting in a slight offset on the next diff
                         case "bth":
                             old_file_pos += offset - 1
-                            new_file_pos += offset
+                            new_file_pos += offset - 1
                             new_file.seek(new_file_pos)
                             old_file.seek(old_file_pos)
 
-                            diff["rmv"][0].append(old_file.read(1))
+                            diff["rmv"][0] += old_file.read(1)
                             old_file_pos += 1
 
                             changes.append((diff["add"], "add"))
@@ -87,8 +86,54 @@ def get_changes(old_file_path: str, new_file_path: str):
     return changes
 
 
+def apply_changes(changes, file_path: str):
+    with open(file_path, "rb+") as file:
+        offset = 0
+        for change in changes:
+            print(offset)
+            bytes_changed = change[0][0]
+            size = len(bytes_changed)
+            position = change[0][1] + offset
+            diff_type = change[1]
+
+            match diff_type:
+                case "rmv":
+                    # update offset
+                    offset -= size
+
+                    # move to the position after the removed portion
+                    file.seek(position + size)
+
+                    # save the content from there onward
+                    original_content = file.read()
+
+                    # delete everything up until the beggining of the removed portion
+                    file.truncate(position)
+
+                    # move to the beggining of the removed portion and rewrite the content
+                    file.seek(position)
+                    file.write(original_content)
+
+                case "add":
+                    # update offset
+                    offset += size
+
+                    # move to the position after the added portion
+                    file.seek(position)
+
+                    # save the new content and everything from there onward
+                    content = bytes_changed + file.read()
+
+                    # delete everything up until the beggining of the added portion
+                    file.truncate(position)
+
+                    # move to the beggining of the removed portion and rewrite the content
+                    file.seek(position)
+                    file.write(content)
+
+
 if __name__ == "__main__":
     changes = get_changes("examples/ex-1.txt", "examples/ex-2.txt")
-    for diff in changes:
-        diff_list = [char.decode() for char in diff[0][0]]
-        print(f"{diff[1]} | {str(diff[0][1]).zfill(5)} | <{"".join(diff_list)}>")
+    print(changes)
+
+    apply_changes(changes, "examples/ex-1.txt")
