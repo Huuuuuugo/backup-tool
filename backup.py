@@ -105,22 +105,19 @@ def get_changes(old_file_path: str, new_file_path: str):
                             changes.append((diff["rmv"], "rmv"))  # save change
 
                         case "bth":
-                            old_file_pos += offset - 1
-                            new_file_pos += offset - 1
+                            old_file_pos += offset
+                            new_file_pos += offset
 
                             # move both files to the end of the chain
                             new_file.seek(new_file_pos)
                             old_file.seek(old_file_pos)
 
-                            # TODO FIXME: this might contain some issue as it assumes the next byte must always
-                            # be deleted, there might be a scenario where this is not the case.
-                            # probably need to add a check for that
-                            # add the next byte on the old_file to the chain of deletions
-                            diff["rmv"][0] += old_file.read(1)
-                            old_file_pos += 1
+                            # add both next bytes to their appropriate byte chain
+                            diff["add"][0] += next_new_byte
+                            diff["rmv"][0] += next_old_byte
 
-                            changes.append((diff["add"], "add"))
-                            changes.append((diff["rmv"], "rmv"))
+                            changes.append((diff["add"], "add"))  # save changes
+                            changes.append((diff["rmv"], "rmv"))  # save changes
 
             # get all the content that was left on any of the files
             remaining_old_bytes = old_file.read()
@@ -181,8 +178,8 @@ def apply_changes(changes, file_path: str):
 
 
 if __name__ == "__main__":
-    old_file = "examples/ex-2.txt"
-    new_file = "examples/ex-1.txt"
+    old_file = "examples/ex-1.txt"
+    new_file = "examples/ex-2.txt"
     changes = get_changes(old_file, new_file)
     print(changes)
 
