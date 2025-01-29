@@ -20,7 +20,8 @@ def get_changes(old_file_path: str, new_file_path: str):
                 # if the bytes are different, get the entire chain of different bytes
                 # and label it as an addition (add) or deletion (rmv)
                 if old_byte != new_byte:
-                    offset = 0
+                    old_pos_offset = 0
+                    new_pos_offset = 0
                     diff_type = ""
                     diff = {"rmv": [old_byte, 0], "add": [new_byte, 0]}
                     rmv_break = False
@@ -31,11 +32,11 @@ def get_changes(old_file_path: str, new_file_path: str):
                     while True:
                         next_old_byte = old_file.read(1)
                         next_new_byte = new_file.read(1)
-                        offset += 1
 
                         # test new_byte against old_file bytes
                         # gets the bytes removed
                         if new_byte == next_old_byte:
+                            old_pos_offset = len(diff["rmv"][0])
                             diff["rmv"][1] = old_file_pos - 1  # set the position where the change beggins
                             rmv_break = True  # sets the flag for breaking and labeling the change as an deletion
                         else:
@@ -45,6 +46,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                         # test old_byte against new_file bytes
                         # gets the bytes added
                         if old_byte == next_new_byte:
+                            new_pos_offset = len(diff["add"][0])
                             diff["add"][1] = old_file_pos - 1  # set the position where the change beggins
                             add_break = True  # sets the flag for breaking and labeling the change as an adition
                         else:
@@ -63,22 +65,29 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                         # check if any of the bytes are empty, wich means one of the files are already finished
                         elif not (next_old_byte and next_new_byte):
-                            same_change_flag = True
+                            # same_change_flag = True
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_new_byte:
+                                old_pos_offset = len(diff["rmv"][0])
+                                print("rmv", diff["rmv"][0])
                                 diff_type = "rmv"
+                                # size_difference = offset - len(diff["rmv"][0])
+                                # old_file_pos += size_difference
                                 diff["rmv"][1] = old_file_pos - 1
 
                                 # check if the length of the content being changed is gratter tha one byte
                                 # if this is true, it means that there's no more bytes avaliable on the other file
                                 # and the last set shouldn't be reused (as it only contains the very last byte, which would endup being reused forever)
                                 if len(diff["rmv"][0]) > 1:
+                                    old_pos_offset -= 1
                                     new_file_pos -= 1  # move the cursor of the finalized file one byte back,
                                     # allowing the same last set of bytes to be tested against all the bytes of the larger file
                                 break
 
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_old_byte:
+                                new_pos_offset = len(diff["add"][0])
+                                print("add", diff["add"][0])
                                 diff_type = "add"
                                 diff["add"][1] = old_file_pos - 1
 
@@ -86,6 +95,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                                 # if this is true, it means that there's no more bytes avaliable on the other file
                                 # and the last set shouldn't be reused (as it only contains the very last byte, which would endup being reused forever)
                                 if len(diff["add"][0]) > 1:
+                                    new_pos_offset -= 1
                                     old_file_pos -= 1  # move the cursor of the finalized file one byte back,
                                     # allowing the same last set of bytes to be tested against all the bytes of the larger file
                                 break
@@ -94,7 +104,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                     # generated the unused diff back to the beggining of the byte chain
                     match diff_type:
                         case "add":
-                            new_file_pos += offset
+                            new_file_pos += new_pos_offset
                             new_file.seek(new_file_pos)  # move to the end of the byte chain
                             old_file.seek(old_file_pos)  # move to the beggining of the byte chain
 
@@ -104,7 +114,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                                 changes.append((diff["add"], "add"))  # save change
 
                         case "rmv":
-                            old_file_pos += offset
+                            old_file_pos += old_pos_offset
                             new_file.seek(new_file_pos)  # move to the beggining of the byte chain
                             old_file.seek(old_file_pos)  # move to the end of the byte chain
 
@@ -115,8 +125,8 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                         # TODO: test how this should interact with the logic to group changes together
                         case "bth":
-                            old_file_pos += offset
-                            new_file_pos += offset
+                            old_file_pos += old_pos_offset
+                            new_file_pos += new_pos_offset
 
                             # move both files to the end of the chain
                             new_file.seek(new_file_pos)
