@@ -1,4 +1,7 @@
 import tempfile
+import shutil
+import random
+import string
 import os
 
 from backup import get_changes, apply_changes
@@ -19,7 +22,7 @@ class TempFileHelper:
                 continue
 
     @classmethod
-    def create(cls, content: bytes):
+    def create(cls, content: bytes = b""):
         temp_file = tempfile.NamedTemporaryFile("wb", delete=False)
         temp_file.write(content)
         temp_file.close()
@@ -62,3 +65,36 @@ class TestCore:
             with open(old_file_path, "rb") as old_file:
                 with open(new_file_path, "rb") as new_file:
                     assert old_file.read() == new_file.read()
+
+    def test_random_chars(self):
+        """Test the program with two randomly generated sequences of characters."""
+        with TempFileHelper() as helper:
+            # assign a random size for each file
+            old_file_size = random.randint(15, 30)
+            new_file_size = random.randint(15, 30)
+
+            # fill both files with random characters
+            old_file_content = "".join(random.choices(string.ascii_letters + string.digits, k=old_file_size))
+            new_file_content = "".join(random.choices(string.ascii_letters + string.digits, k=new_file_size))
+            old_file_path = helper.create(old_file_content.encode())
+            new_file_path = helper.create(new_file_content.encode())
+
+            # create a backup of the old file before it's altered
+            with open(old_file_path, "rb") as old_file:
+                old_file_backup_path = helper.create(old_file.read())
+
+            # get and apply changes
+            changes = get_changes(old_file_path, new_file_path)
+            apply_changes(changes, old_file_path)
+
+            # assert that both files are the same after applying the changes
+            with open(old_file_path, "rb") as old_file:
+                with open(new_file_path, "rb") as new_file:
+                    try:
+                        assert old_file.read() == new_file.read()
+                    except AssertionError as e:
+                        # save the files for analysis if the assertion fails
+                        shutil.copy(old_file_backup_path, "./error_old_file.txt")
+                        shutil.copy(new_file_path, "./error_new_file.txt")
+
+                        raise e
