@@ -1,6 +1,8 @@
 def get_changes(old_file_path: str, new_file_path: str):
     with open(old_file_path, "rb") as old_file:
         with open(new_file_path, "rb") as new_file:
+            same_change_flag = False  # indicates that a new byte chain can be grouped with the last saved chain
+            prev_change_type = ""  # saves the last change type for later use when checking whether to group two chains or not
             new_file_pos = 0
             old_file_pos = 0
             old_byte = 1
@@ -48,8 +50,20 @@ def get_changes(old_file_path: str, new_file_path: str):
                         else:
                             diff["add"][0] += next_new_byte  # append the current byte to the chain of different bytes
 
+                        # check if both or any of the normal break conditions were met
+                        # and specify how the changes should be labeled
+                        if rmv_break or add_break:
+                            if rmv_break and add_break:
+                                diff_type = "bth"  # label changes as both
+                            elif rmv_break:
+                                diff_type = "rmv"  # label changes as deletion
+                            else:
+                                diff_type = "add"  # label changes as addition
+                            break
+
                         # check if any of the bytes are empty, wich means one of the files are already finished
-                        if not (next_old_byte and next_new_byte):
+                        elif not (next_old_byte and next_new_byte):
+                            same_change_flag = True
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_new_byte:
                                 diff_type = "rmv"
@@ -76,17 +90,6 @@ def get_changes(old_file_path: str, new_file_path: str):
                                     # allowing the same last set of bytes to be tested against all the bytes of the larger file
                                 break
 
-                        # check if both or any of the normal break conditions were met
-                        # and specify how the changes should be labeled
-                        elif rmv_break or add_break:
-                            if rmv_break and add_break:
-                                diff_type = "bth"  # label changes as both
-                            elif rmv_break:
-                                diff_type = "rmv"  # label changes as deletion
-                            else:
-                                diff_type = "add"  # label changes as addition
-                            break
-
                     # save the changes according to the label and move the cursor of the file that
                     # generated the unused diff back to the beggining of the byte chain
                     match diff_type:
@@ -95,15 +98,22 @@ def get_changes(old_file_path: str, new_file_path: str):
                             new_file.seek(new_file_pos)  # move to the end of the byte chain
                             old_file.seek(old_file_pos)  # move to the beggining of the byte chain
 
-                            changes.append((diff["add"], "add"))  # save change
+                            if same_change_flag and (prev_change_type == diff_type):
+                                changes[-1][0][0] += diff["add"][0]
+                            else:
+                                changes.append((diff["add"], "add"))  # save change
 
                         case "rmv":
                             old_file_pos += offset
                             new_file.seek(new_file_pos)  # move to the beggining of the byte chain
                             old_file.seek(old_file_pos)  # move to the end of the byte chain
 
-                            changes.append((diff["rmv"], "rmv"))  # save change
+                            if same_change_flag and (prev_change_type == diff_type):
+                                changes[-1][0][0] += diff["rmv"][0]
+                            else:
+                                changes.append((diff["rmv"], "rmv"))  # save change
 
+                        # TODO: test how this should interact with the logic to group changes together
                         case "bth":
                             old_file_pos += offset
                             new_file_pos += offset
@@ -119,11 +129,17 @@ def get_changes(old_file_path: str, new_file_path: str):
                             changes.append((diff["add"], "add"))  # save changes
                             changes.append((diff["rmv"], "rmv"))  # save changes
 
+                    prev_change_type = diff_type
+
+                elif same_change_flag:
+                    same_change_flag = False  # update the flag if the changes loop didn't trigger on the first iteration
+                    prev_change_type = ""
+
             # get all the content that was left on any of the files
             remaining_old_bytes = old_file.read()
             remaining_new_bytes = new_file.read()
 
-            # save the reminder content to the list of changes accordingly
+            # save the remaining content to the list of changes accordingly
             if remaining_old_bytes:
                 changes.append(([remaining_old_bytes, old_file_pos], "rmv"))
             elif remaining_new_bytes:
@@ -178,8 +194,11 @@ def apply_changes(changes, file_path: str):
 
 
 if __name__ == "__main__":
-    old_file = "examples/ex-1.txt"
-    new_file = "examples/ex-2.txt"
+    import sys
+
+    old_file = sys.argv[1]
+    new_file = sys.argv[2]
+
     changes = get_changes(old_file, new_file)
     print(changes)
 
@@ -188,6 +207,6 @@ if __name__ == "__main__":
 
     apply_changes(changes, old_file)
 
-    input()
+    input("Press enter to restore the test file.")
     with open(old_file, "wb") as file:
         original_content = file.write(original_content)
