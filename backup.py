@@ -1,7 +1,6 @@
 def get_changes(old_file_path: str, new_file_path: str):
     with open(old_file_path, "rb") as old_file:
         with open(new_file_path, "rb") as new_file:
-            a = 1
             same_change_flag = False  # indicates that a new byte chain can be grouped with the last saved chain
             prev_change_type = ""  # saves the last change type for later use when checking whether to group two chains or not
             new_file_pos = 0
@@ -21,6 +20,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                 # if the bytes are different, get the entire chain of different bytes
                 # and label it as an addition (add) or deletion (rmv)
                 if old_byte != new_byte:
+                    temp_same_change_flag = False  # stores the value of same_change_flag to be assigned after the loop
                     old_pos_offset = 0
                     new_pos_offset = 0
                     diff_type = ""
@@ -66,9 +66,8 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                         # check if any of the bytes are empty, wich means one of the files are already finished
                         elif not (next_old_byte and next_new_byte):
-                            same_change_flag = True
+                            temp_same_change_flag = True
                             if (not next_new_byte) and (not next_old_byte):
-                                print("bth", diff["add"], diff["rmv"])
                                 old_pos_offset = len(diff["rmv"][0])
                                 new_pos_offset = len(diff["add"][0])
                                 diff["rmv"][1] = old_file_pos - 1
@@ -78,9 +77,7 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_new_byte:
-                                print("rmv", diff["add"], diff["rmv"])
                                 old_pos_offset = len(diff["rmv"][0])
-                                new_pos_offset = len(diff["add"][0])
                                 diff["rmv"][1] = old_file_pos - 1
                                 diff_type = "rmv"
 
@@ -95,7 +92,6 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_old_byte:
-                                print("rmv", diff["add"], diff["rmv"])
                                 new_pos_offset = len(diff["add"][0])
                                 diff["add"][1] = old_file_pos - 1
                                 diff_type = "add"
@@ -117,8 +113,11 @@ def get_changes(old_file_path: str, new_file_path: str):
                             new_file.seek(new_file_pos)  # move to the end of the byte chain
                             old_file.seek(old_file_pos)  # move to the beggining of the byte chain
 
-                            if same_change_flag and (prev_change_type == diff_type):
-                                changes[-1][0][0] += diff["add"][0]
+                            if same_change_flag and (prev_change_type in (diff_type, "bth")):
+                                if prev_change_type == "bth":
+                                    changes[-2][0][0] += diff["add"][0]
+                                else:
+                                    changes[-1][0][0] += diff["add"][0]
                             else:
                                 changes.append((diff["add"], "add"))  # save change
 
@@ -127,13 +126,13 @@ def get_changes(old_file_path: str, new_file_path: str):
                             new_file.seek(new_file_pos)  # move to the beggining of the byte chain
                             old_file.seek(old_file_pos)  # move to the end of the byte chain
 
-                            if same_change_flag and (prev_change_type == diff_type):
+                            if same_change_flag and (prev_change_type in (diff_type, "bth")):
                                 changes[-1][0][0] += diff["rmv"][0]
                             else:
                                 changes.append((diff["rmv"], "rmv"))  # save change
 
-                        # TODO: test how this should interact with the logic to group changes together
                         case "bth":
+                            temp_same_change_flag = True
                             old_file_pos += old_pos_offset
                             new_file_pos += new_pos_offset
 
@@ -148,6 +147,7 @@ def get_changes(old_file_path: str, new_file_path: str):
                             changes.append((diff["add"], "add"))  # save changes
                             changes.append((diff["rmv"], "rmv"))  # save changes
 
+                    same_change_flag = temp_same_change_flag
                     prev_change_type = diff_type
 
                 elif same_change_flag:
