@@ -1,6 +1,7 @@
 def get_changes(old_file_path: str, new_file_path: str):
     with open(old_file_path, "rb") as old_file:
         with open(new_file_path, "rb") as new_file:
+            a = 1
             same_change_flag = False  # indicates that a new byte chain can be grouped with the last saved chain
             prev_change_type = ""  # saves the last change type for later use when checking whether to group two chains or not
             new_file_pos = 0
@@ -65,15 +66,23 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                         # check if any of the bytes are empty, wich means one of the files are already finished
                         elif not (next_old_byte and next_new_byte):
-                            # same_change_flag = True
+                            same_change_flag = True
+                            if (not next_new_byte) and (not next_old_byte):
+                                print("bth", diff["add"], diff["rmv"])
+                                old_pos_offset = len(diff["rmv"][0])
+                                new_pos_offset = len(diff["add"][0])
+                                diff["rmv"][1] = old_file_pos - 1
+                                diff["add"][1] = old_file_pos - 1
+                                diff_type = "bth"
+                                break
+
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_new_byte:
+                                print("rmv", diff["add"], diff["rmv"])
                                 old_pos_offset = len(diff["rmv"][0])
-                                print("rmv", diff["rmv"][0])
-                                diff_type = "rmv"
-                                # size_difference = offset - len(diff["rmv"][0])
-                                # old_file_pos += size_difference
+                                new_pos_offset = len(diff["add"][0])
                                 diff["rmv"][1] = old_file_pos - 1
+                                diff_type = "rmv"
 
                                 # check if the length of the content being changed is gratter tha one byte
                                 # if this is true, it means that there's no more bytes avaliable on the other file
@@ -86,10 +95,10 @@ def get_changes(old_file_path: str, new_file_path: str):
 
                             # if the new_file ended first, keep removing bytes until there's nothing left to be tested on any of the files
                             if not next_old_byte:
+                                print("rmv", diff["add"], diff["rmv"])
                                 new_pos_offset = len(diff["add"][0])
-                                print("add", diff["add"][0])
-                                diff_type = "add"
                                 diff["add"][1] = old_file_pos - 1
+                                diff_type = "add"
 
                                 # check if the length of the content being changed is gratter tha one byte
                                 # if this is true, it means that there's no more bytes avaliable on the other file

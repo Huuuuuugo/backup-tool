@@ -56,8 +56,15 @@ def validate_changes_shortcut(old_file_content: bytes, new_file_content: bytes):
 
 
 class TestCore:
-    def test_problematic_strings(self):
-        """Test two byte sequences that result on a slightly offseted output if the file positions aren't handdled correctly on the program"""
+    def test_test_get_changes_file_end_simultaneusly(self):
+        """Test two byte sequences where both files end simultaneusly, resulting on the last byte being lost if the program doesn't handle this scenario correctly"""
+        validate_changes_shortcut(
+            b"3tWpQlfCWlTOWxY7Cc2Lt",
+            b"gxTVznFfHd4Izlvmq",
+        )
+
+    def test_get_changes_offset_lfix(self):
+        """Test two byte sequences that result on a slightly offseted output if the file positions aren't handled correctly on the program"""
         validate_changes_shortcut(
             b"SMfJTV6rN3N9NYFsj6K8UIaZndg",
             b"xizAxQkVNEzVY",
