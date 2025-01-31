@@ -1,14 +1,18 @@
-from enum import Enum
+import tempfile
+import zipfile
+import shutil
+import enum
 import io
+import os
 
 
 class Change:
-    class ChangeTypes(Enum):
+    class ChangeTypes(enum.Enum):
         ADD = 0
         RMV = 1
 
     def __init__(self, type: ChangeTypes, position: int = 0, content: bytes = b""):
-        self.type = type.value
+        self.type = type
         self.position = position
         self.content = content
 
@@ -49,8 +53,8 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
                     old_pos_offset = 0
                     new_pos_offset = 0
                     change_type = ""
-                    add = Change(types.ADD, 0, new_byte)
-                    rmv = Change(types.RMV, 0, old_byte)
+                    add = Change(types.ADD.value, 0, new_byte)
+                    rmv = Change(types.RMV.value, 0, old_byte)
                     rmv_break = False
                     add_break = False
 
@@ -186,9 +190,9 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
 
             # save the remaining content to the list of changes accordingly
             if remaining_old_bytes:
-                changes.append(Change(types.RMV, old_file_pos, remaining_old_bytes))
+                changes.append(Change(types.RMV.value, old_file_pos, remaining_old_bytes))
             elif remaining_new_bytes:
-                changes.append(Change(types.ADD, old_file_pos, remaining_new_bytes))
+                changes.append(Change(types.ADD.value, old_file_pos, remaining_new_bytes))
 
     return changes
 
@@ -262,33 +266,88 @@ def apply_changes(changes: list[Change], file_path: str) -> None:
     changed.close()
 
 
+def create_backup(old_file: str, new_file: str, backup_file: str) -> None:
+    # get everything that changed between the two files
+    changes = get_changes(old_file, new_file)
+
+    # save instructions and changes to temporary files
+    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+        temp_changes_path = os.path.join(temp_dir, "changes")
+        temp_instructions_path = os.path.join(temp_dir, "instructions")
+        with open(temp_instructions_path, "w") as instructions_file:
+            with open(temp_changes_path, "wb") as changes_file:
+                for change in changes:
+                    # save instruction for current change
+                    instruction_str = f"{change.type} {change.position} {change.size}\n"
+                    instructions_file.write(instruction_str)
+
+                    # save bytes changed
+                    changes_file.write(change.content)
+
+        # compress both files together
+        temp_zip_path = os.path.join(temp_dir, "backup")
+        with zipfile.ZipFile(temp_zip_path, "w", compression=zipfile.ZIP_LZMA) as zip_file:
+            zip_file.write(temp_instructions_path, "instructions")
+            zip_file.write(temp_changes_path, "changes")
+
+        # save output file
+        shutil.move(temp_zip_path, backup_file)
+
+
+def restore_backup(backup_file: str, input_file: str, output_file: str | None = None) -> None:
+    if output_file is None:
+        output_file = input_file
+
+    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+        # extract files from the backup
+        with zipfile.ZipFile(backup_file, "r") as backup_file:
+            backup_file.extractall(path=temp_dir)
+
+        # create a list of change objects
+        changes = []
+        temp_changes_path = os.path.join(temp_dir, "changes")
+        temp_instructions_path = os.path.join(temp_dir, "instructions")
+
+        with open(temp_instructions_path, "r") as instructions_file:
+            with open(temp_changes_path, "rb") as changes_file:
+                for line in instructions_file.readlines():
+                    type, position, size = line.strip().split(" ")
+                    content = changes_file.read(int(size))
+
+                    changes.append(Change(int(type), int(position), content))
+
+    # apply changes to the input_file
+    apply_changes(changes, output_file)
+
+
 if __name__ == "__main__":
     import time
     import sys
 
     old_file = sys.argv[1]
     new_file = sys.argv[2]
+    bak_file = sys.argv[3]
 
-    get_changes_time = time.perf_counter()
-    changes = get_changes(old_file, new_file)
-    get_changes_time = time.perf_counter() - get_changes_time
-    for change in changes:
-        print(change)
-    print(f"Got changes in {get_changes_time}s")
+    create_time = time.perf_counter()
+    create_backup(old_file, new_file, bak_file)
+    create_time = time.perf_counter() - create_time
+    print(f"Backup created in {create_time}s")
+
+    input("Press enter to restore backup.")
 
     with open(old_file, "rb") as file:
         original_content = file.read()
 
-    apply_changes_time = time.perf_counter()
-    apply_changes(changes, old_file)
-    apply_changes_time = time.perf_counter() - apply_changes_time
-    print(f"Applied changes in {apply_changes_time}s")
+    restore_time = time.perf_counter()
+    restore_backup(bak_file, old_file)
+    restore_time = time.perf_counter() - restore_time
+    print(f"Backup restored in {restore_time}s")
 
     with open(old_file, "rb") as old:
         with open(new_file, "rb") as new:
             print(old.read() == new.read())
 
-    input("Press enter to restore the test file.")
+    input("Press enter to restore the file.")
 
     with open(old_file, "wb") as file:
         original_content = file.write(original_content)
