@@ -1,4 +1,5 @@
 from enum import Enum
+import io
 
 
 class Change:
@@ -193,64 +194,95 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
 
 
 def apply_changes(changes: list[Change], file_path: str) -> None:
-    with open(file_path, "rb+") as file:
-        offset = 0
-        for change in changes:
-            bytes_changed = change.content
-            size = change.size
-            position = change.position + offset
-            change_type = change.type
+    # separate the changed portion from the rest of the file
+    with open(file_path, "rb") as file:
+        # get first and last change
+        first_change = changes[0]
+        last_change = changes[-1]
 
-            match change_type:
-                case types.RMV.value:
-                    # update offset
-                    offset -= size
+        # get unchanged portion on the beginning of the file
+        unchanged_start = file.read(first_change.position)
 
-                    # move to the position after the removed portion
-                    file.seek(position + size)
+        # get unchanged portion on the ending of the file
+        ending_pos = last_change.position
+        if last_change.type == types.RMV.value:
+            ending_pos += last_change.size
+        file.seek(ending_pos)
+        unchanged_end = file.read()
 
-                    # save the content from there onward
-                    original_content = file.read()
+        # get the portion in the middle containing the bytes changed
+        file.seek(first_change.position)  # got to the position of the first change
+        changed_size = ending_pos - first_change.position
+        changed = io.BytesIO(file.read(changed_size))
+        changed.seek(0)
 
-                    # delete everything up until the beggining of the removed portion
-                    file.truncate(position)
+    # apply changes sequentially
+    offset = 0
+    for change in changes:
+        bytes_changed = change.content
+        size = change.size
+        position = change.position - first_change.position + offset
+        change_type = change.type
 
-                    # move to the beggining of the removed portion and rewrite the content
-                    file.seek(position)
-                    file.write(original_content)
+        match change_type:
+            case types.RMV.value:
+                # update offset
+                offset -= size
 
-                case types.ADD.value:
-                    # update offset
-                    offset += size
+                # move to the position after the removed portion
+                changed.seek(position + size)
 
-                    # move to the position after the added portion
-                    file.seek(position)
+                # save the content from there onward
+                original_content = changed.read()
 
-                    # save the new content and everything from there onward
-                    content = bytes_changed + file.read()
+                # move to the beggining of the removed portion and rewrite the content
+                changed.seek(position)
+                changed.write(original_content)
 
-                    # delete everything up until the beggining of the added portion
-                    file.truncate(position)
+            case types.ADD.value:
+                # update offset
+                offset += size
 
-                    # move to the beggining of the removed portion and rewrite the content
-                    file.seek(position)
-                    file.write(content)
+                # move to the position after the added portion
+                changed.seek(position)
+
+                # save the new content and everything from there onward
+                content = bytes_changed + changed.read()
+
+                # move to the beggining of the removed portion and rewrite the content
+                changed.seek(position)
+                changed.write(content)
+
+    # save changes to the file
+    with open(file_path, "wb") as file:
+        file.write(unchanged_start)
+        changed.seek(0)
+        file.write(changed.read(changed_size + offset))
+        file.write(unchanged_end)
+    changed.close()
 
 
 if __name__ == "__main__":
+    import time
     import sys
 
     old_file = sys.argv[1]
     new_file = sys.argv[2]
 
+    get_changes_time = time.perf_counter()
     changes = get_changes(old_file, new_file)
+    get_changes_time = time.perf_counter() - get_changes_time
     for change in changes:
         print(change)
+    print(f"Got changes in {get_changes_time}s")
 
     with open(old_file, "rb") as file:
         original_content = file.read()
 
+    apply_changes_time = time.perf_counter()
     apply_changes(changes, old_file)
+    apply_changes_time = time.perf_counter() - apply_changes_time
+    print(f"Applied changes in {apply_changes_time}s")
 
     with open(old_file, "rb") as old:
         with open(new_file, "rb") as new:
