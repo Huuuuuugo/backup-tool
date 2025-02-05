@@ -2,8 +2,21 @@ import tempfile
 import zipfile
 import shutil
 import enum
+import time
 import io
 import os
+
+
+BACKUP_DATA_DIR = os.path.realpath("./bak")
+os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
+
+BACKUP_LIST_PATH = os.path.normpath(os.path.join(BACKUP_DATA_DIR, "backup_list.txt"))
+if not os.path.exists(BACKUP_LIST_PATH):
+    open(BACKUP_LIST_PATH, "wb").close()
+
+
+class NoChangesException(Exception):
+    pass
 
 
 class Change:
@@ -189,6 +202,7 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
             remaining_new_bytes = new_file.read()
 
             # save the remaining content to the list of changes accordingly
+            # TODO: make it append to the last change when appropriate
             if remaining_old_bytes:
                 changes.append(Change(types.RMV.value, old_file_pos, remaining_old_bytes))
             elif remaining_new_bytes:
@@ -270,6 +284,9 @@ def create_backup(old_file: str, new_file: str, backup_file: str) -> None:
     # get everything that changed between the two files
     changes = get_changes(old_file, new_file)
 
+    if not changes:
+        raise NoChangesException("The file is exactly the same as the last backup.")
+
     # save instructions and changes to temporary files
     with tempfile.TemporaryDirectory(dir="") as temp_dir:
         temp_changes_path = os.path.join(temp_dir, "changes")
@@ -320,34 +337,65 @@ def restore_backup(backup_file: str, input_file: str, output_file: str | None = 
     apply_changes(changes, output_file)
 
 
+# TODO: add support for messages on backups
+def create_global_backup(file_path: str) -> None:
+    file_path = os.path.realpath(file_path)  # get the normalized absolute path of the file
+    timestamp = time.time_ns()  # get the timestamp of the backup
+
+    # get the list of existing backups
+    backup_list = {}
+    with open(BACKUP_LIST_PATH, "r", encoding="utf8") as backup_list_file:
+        # map each path on the list to its index on the backup folders
+        for index, line in enumerate(backup_list_file):
+            backup_list.update({os.path.realpath(line.strip()): index})
+
+        # set the next entry index to zero if the list is empty
+        try:
+            next_entry = index + 1
+        except UnboundLocalError:
+            next_entry = 0
+
+    # check if a backup already exists for the file and get its index
+    try:
+        backup_index = backup_list[file_path]
+        backup_exists = True
+    except KeyError:
+        backup_index = next_entry
+        backup_exists = False
+
+    # get the appropriate directory for backups of the selected file and the
+    # exact path where the new backup and head will be stored
+    backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/")
+    new_backup_path = os.path.join(backups_dir, f"changes/{timestamp}")
+    head_file_path = os.path.join(backups_dir, "head")
+
+    # if the file is being backed up for the first time
+    if not backup_exists:
+        # create backup directory
+        os.makedirs(os.path.dirname(new_backup_path), exist_ok=True)
+
+        # creat an empty head file
+        open(head_file_path, "wb").close()
+
+        # add the new file to the list of backups
+        with open(BACKUP_LIST_PATH, "a", encoding="utf8") as backup_list_file:
+            backup_list_file.write(f"{file_path}\n")
+
+    # create a temporary backup file
+    with tempfile.TemporaryDirectory(dir=BACKUP_DATA_DIR) as temp_dir:
+        # create backup
+        temp_bak_path = os.path.join(temp_dir, "bak")
+        create_backup(head_file_path, file_path, temp_bak_path)
+
+        # copy temporary backup to its approrpiate path
+        shutil.move(temp_bak_path, new_backup_path)
+
+    # copy current version of the file to head
+    shutil.copy(file_path, head_file_path)
+
+
 if __name__ == "__main__":
-    import time
     import sys
 
-    old_file = sys.argv[1]
-    new_file = sys.argv[2]
-    bak_file = sys.argv[3]
-
-    create_time = time.perf_counter()
-    create_backup(old_file, new_file, bak_file)
-    create_time = time.perf_counter() - create_time
-    print(f"Backup created in {create_time}s")
-
-    input("Press enter to restore backup.")
-
-    with open(old_file, "rb") as file:
-        original_content = file.read()
-
-    restore_time = time.perf_counter()
-    restore_backup(bak_file, old_file)
-    restore_time = time.perf_counter() - restore_time
-    print(f"Backup restored in {restore_time}s")
-
-    with open(old_file, "rb") as old:
-        with open(new_file, "rb") as new:
-            print(old.read() == new.read())
-
-    input("Press enter to restore the file.")
-
-    with open(old_file, "wb") as file:
-        original_content = file.write(original_content)
+    new_file = sys.argv[1]
+    create_global_backup(new_file)
