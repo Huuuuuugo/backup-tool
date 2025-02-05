@@ -4,7 +4,7 @@ import random
 import string
 import os
 
-from backup import get_changes, apply_changes
+from backup import get_changes, apply_changes, Change, types
 
 
 class TempFileHelper:
@@ -56,6 +56,45 @@ def validate_changes_shortcut(old_file_content: bytes, new_file_content: bytes):
 
 
 class TestCore:
+    def test_apply_changes_add(self):
+        """Test the `apply_changes` function with an addition"""
+        changes = [Change(types.ADD.value, 5, b" add")]
+        original_content = b"apply test"
+        expected_content = b"apply add test"
+
+        with TempFileHelper() as helper:
+            original_file_path = helper.create(original_content)
+            apply_changes(changes, original_file_path)
+
+            with open(original_file_path, "rb") as original_file:
+                assert expected_content == original_file.read()
+
+    def test_apply_changes_rmv(self):
+        """Test the `apply_changes` function with a deletion"""
+        changes = [Change(types.RMV.value, 0, b"apply ")]
+        original_content = b"apply test"
+        expected_content = b"test"
+
+        with TempFileHelper() as helper:
+            original_file_path = helper.create(original_content)
+            apply_changes(changes, original_file_path)
+
+            with open(original_file_path, "rb") as original_file:
+                assert expected_content == original_file.read()
+
+    def test_apply_changes_add_rmv(self):
+        """Test the `apply_changes` function with an addition and a deletion"""
+        changes = [Change(types.ADD.value, 0, b"both"), Change(types.RMV.value, 0, b"apply")]
+        original_content = b"apply test"
+        expected_content = b"both test"
+
+        with TempFileHelper() as helper:
+            original_file_path = helper.create(original_content)
+            apply_changes(changes, original_file_path)
+
+            with open(original_file_path, "rb") as original_file:
+                assert expected_content == original_file.read()
+
     def test_get_changes_merge_consecutive_changes(self):
         """Test two byte sequences that used to result on a character being wrong due to an error on the logic that groups consecutive changes together"""
         validate_changes_shortcut(
