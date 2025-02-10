@@ -1,3 +1,4 @@
+import datetime
 import tempfile
 import zipfile
 import shutil
@@ -5,6 +6,9 @@ import enum
 import time
 import io
 import os
+
+
+from utils import get_global_backups_list_and_next_index
 
 
 BACKUP_DATA_DIR = os.path.realpath("./bak")
@@ -343,17 +347,7 @@ def create_global_backup(file_path: str) -> None:
     timestamp = time.time_ns()  # get the timestamp of the backup
 
     # get the list of existing backups
-    backup_list = {}
-    with open(BACKUP_LIST_PATH, "r", encoding="utf8") as backup_list_file:
-        # map each path on the list to its index on the backup folders
-        for index, line in enumerate(backup_list_file):
-            backup_list.update({os.path.realpath(line.strip()): index})
-
-        # set the next entry index to zero if the list is empty
-        try:
-            next_entry = index + 1
-        except UnboundLocalError:
-            next_entry = 0
+    backup_list, next_entry = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)
 
     # check if a backup already exists for the file and get its index
     try:
@@ -394,8 +388,30 @@ def create_global_backup(file_path: str) -> None:
     shutil.copy(file_path, head_file_path)
 
 
-if __name__ == "__main__":
-    import sys
+def list_global_backup_paths():
+    backup_list = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)[0]
 
-    new_file = sys.argv[1]
-    create_global_backup(new_file)
+    for key in backup_list.keys():
+        print(f"{backup_list[key]} | {key}")
+
+
+def list_backups(backup_index: int):
+    global_backup_list = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)[0]
+
+    for value in global_backup_list.values():
+        if value == backup_index:
+            backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
+            backups_list = os.listdir(backups_dir)
+
+    for backup in backups_list:
+        print(f"{backup} | {datetime.datetime.fromtimestamp(int(backup)//1000000000)}")
+
+
+if __name__ == "__main__":
+    list_global_backup_paths()
+    list_backups(0)
+
+    # import sys
+
+    # new_file = sys.argv[1]
+    # create_global_backup(new_file)
