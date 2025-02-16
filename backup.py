@@ -1,9 +1,6 @@
-import datetime
 import tempfile
 import zipfile
 import shutil
-import typing
-import json
 import enum
 import time
 import io
@@ -19,6 +16,10 @@ TRACKED_FILES_LIST_PATH = os.path.normpath(os.path.join(BACKUP_DATA_DIR, "tracke
 
 
 class NoChangesException(Exception):
+    pass
+
+
+class BackupNotFoundError(Exception):
     pass
 
 
@@ -396,27 +397,28 @@ def list_tracked_files():
     tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
     tracked_list = tracked_list_manger.read()["list"]
 
-    for file in tracked_list:
-        print(f"{file['index']} | {file['path']}")
+    return tracked_list
 
 
 def list_file_backups(backup_index: int):
-    tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
-    tracked_list = tracked_list_manger.read()["list"]
+    tracked_list = list_tracked_files()
 
+    backup_list = []
     for file in tracked_list:
         if file["index"] == backup_index:
             backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
             backup_list = os.listdir(backups_dir)
 
+    if not backup_list:
+        raise BackupNotFoundError(f"Backup with index '{backup_index}' does not exist.")
+
     backup_list.reverse()
-    for backup in backup_list:
-        print(f"{backup} | {date_from_ms(int(backup))}")
+    return backup_list
 
 
 if __name__ == "__main__":
-    list_tracked_files()
-    list_file_backups(0)
+    print(list_tracked_files())
+    print(list_file_backups(0))
 
     # import sys
 
