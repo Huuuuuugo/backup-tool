@@ -2,21 +2,20 @@ import datetime
 import tempfile
 import zipfile
 import shutil
+import typing
+import json
 import enum
 import time
 import io
 import os
 
-
-from utils import get_global_backups_list_and_next_index
+from utils import JSONManager, date_from_ms
 
 
 BACKUP_DATA_DIR = os.path.realpath("./bak")
 os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
 
-BACKUP_LIST_PATH = os.path.normpath(os.path.join(BACKUP_DATA_DIR, "backup_list.txt"))
-if not os.path.exists(BACKUP_LIST_PATH):
-    open(BACKUP_LIST_PATH, "wb").close()
+TRACKED_FILES_LIST_PATH = os.path.normpath(os.path.join(BACKUP_DATA_DIR, "tracked.json"))
 
 
 class NoChangesException(Exception):
@@ -342,20 +341,23 @@ def restore_backup(backup_file: str, input_file: str, output_file: str | None = 
 
 
 # TODO: add support for messages on backups
+# TODO: add support for using aliases instead of full paths
 def create_global_backup(file_path: str) -> None:
     file_path = os.path.realpath(file_path)  # get the normalized absolute path of the file
     timestamp = time.time_ns()  # get the timestamp of the backup
 
-    # get the list of existing backups
-    backup_list, next_entry = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)
+    # get the list of tracked files and index of a possible new tracked file
+    tracked_list_manager = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
+    tracked_list = tracked_list_manager.read()
+    next_entry = tracked_list["last"] + 1
 
     # check if a backup already exists for the file and get its index
-    try:
-        backup_index = backup_list[file_path]
-        backup_exists = True
-    except KeyError:
-        backup_index = next_entry
-        backup_exists = False
+    backup_exists = False
+    backup_index = next_entry
+    for backup in tracked_list["list"]:
+        if backup["path"] == file_path:
+            backup_exists = True
+            backup_index = backup["index"]
 
     # get the appropriate directory for backups of the selected file and the
     # exact path where the new backup and head will be stored
@@ -372,8 +374,10 @@ def create_global_backup(file_path: str) -> None:
         open(head_file_path, "wb").close()
 
         # add the new file to the list of backups
-        with open(BACKUP_LIST_PATH, "a", encoding="utf8") as backup_list_file:
-            backup_list_file.write(f"{file_path}\n")
+        new_backup = {"index": backup_index, "path": file_path}
+        tracked_list["list"].append(new_backup)
+        tracked_list["last"] = backup_index
+        tracked_list_manager.save(tracked_list)
 
     # create a temporary backup file
     with tempfile.TemporaryDirectory(dir=BACKUP_DATA_DIR) as temp_dir:
@@ -388,28 +392,31 @@ def create_global_backup(file_path: str) -> None:
     shutil.copy(file_path, head_file_path)
 
 
-def list_global_backup_paths():
-    backup_list = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)[0]
+def list_tracked_files():
+    tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
+    tracked_list = tracked_list_manger.read()["list"]
 
-    for key in backup_list.keys():
-        print(f"{backup_list[key]} | {key}")
+    for file in tracked_list:
+        print(f"{file['index']} | {file['path']}")
 
 
-def list_backups(backup_index: int):
-    global_backup_list = get_global_backups_list_and_next_index(BACKUP_LIST_PATH)[0]
+def list_file_backups(backup_index: int):
+    tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
+    tracked_list = tracked_list_manger.read()["list"]
 
-    for value in global_backup_list.values():
-        if value == backup_index:
+    for file in tracked_list:
+        if file["index"] == backup_index:
             backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
-            backups_list = os.listdir(backups_dir)
+            backup_list = os.listdir(backups_dir)
 
-    for backup in backups_list:
-        print(f"{backup} | {datetime.datetime.fromtimestamp(int(backup)//1000000000)}")
+    backup_list.reverse()
+    for backup in backup_list:
+        print(f"{backup} | {date_from_ms(int(backup))}")
 
 
 if __name__ == "__main__":
-    list_global_backup_paths()
-    list_backups(0)
+    list_tracked_files()
+    list_file_backups(0)
 
     # import sys
 

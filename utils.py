@@ -1,18 +1,31 @@
+import datetime
+import json
 import os
 
 
-def get_global_backups_list_and_next_index(backup_list_path: str):
-    # get the list of existing backups
-    backup_list = {}
-    with open(backup_list_path, "r", encoding="utf8") as backup_list_file:
-        # map each path on the list to its index on the backup folders
-        for index, line in enumerate(backup_list_file):
-            backup_list.update({os.path.realpath(line.strip()): index})
+class JSONManager:
+    def __init__(self, json_path: str, default_value: dict | list):
+        self.path = json_path
 
-        # set the next entry index to zero if the list is empty
-        try:
-            next_entry = index + 1
-        except UnboundLocalError:
-            next_entry = 0
+        # read content from the file if it already exists
+        if os.path.exists(json_path):
+            self.content = self.read()
 
-    return (backup_list, next_entry)
+        # create file with the default value if not
+        else:
+            self.content = self.save(default_value)
+
+    def read(self):
+        with open(self.path, "r", encoding="utf8") as file:
+            self.content = json.loads(file.read())
+
+        return self.content
+
+    def save(self, content: dict | list):
+        with open(self.path, "w", encoding="utf8") as file:
+            self.content = content
+            file.write(json.dumps(self.content, indent=2))
+
+
+def date_from_ms(timestamp: int):
+    return datetime.datetime.fromtimestamp(timestamp // 1000000000)
