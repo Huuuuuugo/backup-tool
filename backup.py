@@ -215,6 +215,7 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
     return changes
 
 
+# TODO: make it work on reverse (new_file to old_file)
 def apply_changes(changes: list[Change], file_path: str) -> None:
     # separate the changed portion from the rest of the file
     with open(file_path, "rb") as file:
@@ -400,7 +401,7 @@ def list_tracked_files():
     return tracked_list
 
 
-def list_file_backups(backup_index: int):
+def list_file_backups(backup_index: int, reverse: bool = False):
     tracked_list = list_tracked_files()
 
     backup_list = []
@@ -408,19 +409,60 @@ def list_file_backups(backup_index: int):
         if file["index"] == backup_index:
             backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
             backup_list = os.listdir(backups_dir)
+            backup_list = [int(backup) for backup in backup_list]
 
     if not backup_list:
         raise BackupNotFoundError(f"Backup with index '{backup_index}' does not exist.")
 
-    backup_list.reverse()
+    if reverse:
+        backup_list.reverse()
     return backup_list
 
 
+# TODO: create automatic backup when restoring with unsaved changes
+# TODO: create shortcut for restoring head, root and automatic backup
+# TODO: make it also work form newest to oldest backup
+def restore_global_backup(backup_index: int, timestamp: int) -> None:
+    # get path to the original file
+    for file in list_tracked_files():
+        if file["index"] == backup_index:
+            file_path = file["path"]
+
+    # get dir where the backups are stored
+    backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
+
+    # get list of steps untill the target backup
+    backup_list = list_file_backups(backup_index)
+    for i, backup in enumerate(backup_list):
+        if backup == timestamp:
+            break
+    backup_steps = backup_list[0 : i + 1]
+
+    # apply all backups in sequence from oldest to newest
+    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+        # save changes to a temporary file
+        temp_file = os.path.join(temp_dir, "temp")
+        open(temp_file, "wb").close()
+        for backup in backup_steps:
+            backup_path = os.path.join(backups_dir, str(backup))
+            restore_backup(backup_path, temp_file)
+
+        shutil.copy(temp_file, file_path)
+
+
 if __name__ == "__main__":
-    print(list_tracked_files())
-    print(list_file_backups(0))
+    import sys
 
-    # import sys
-
+    # # create backup
     # new_file = sys.argv[1]
     # create_global_backup(new_file)
+
+    # # list backup
+    # print(list_tracked_files())
+    # print(list_file_backups(0, True))
+
+    # restore backup
+    backup_index = int(sys.argv[1])
+    timestamp = int(sys.argv[2])
+
+    restore_global_backup(backup_index, timestamp)
