@@ -1,3 +1,4 @@
+import argparse
 import tempfile
 import zipfile
 import shutil
@@ -394,9 +395,14 @@ def create_global_backup(file_path: str) -> None:
     shutil.copy(file_path, head_file_path)
 
 
-def list_tracked_files():
+def list_tracked_files(index: int | None = None):
     tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
     tracked_list = tracked_list_manger.read()["list"]
+
+    if index is not None:
+        for file in tracked_list:
+            if file["index"] == index:
+                return file["path"]
 
     return tracked_list
 
@@ -450,19 +456,50 @@ def restore_global_backup(backup_index: int, timestamp: int) -> None:
         shutil.copy(temp_file, file_path)
 
 
+def main():
+    # arguments setup
+    parser = argparse.ArgumentParser()
+    subparser = parser.add_subparsers(dest="action", help="avaliable commands:")
+
+    # arguments for creating backup
+    create_parser = subparser.add_parser("create", help="creates a new backup")
+    create_parser.add_argument("path", type=str, help="the path of the file being backed up")
+
+    # arguments for restoring a backup
+    restore_parser = subparser.add_parser("restore", help="restores a backup.")
+    restore_parser.add_argument("index", type=int, help="the index of the file being restored")
+    restore_parser.add_argument("timestamp", type=int, help="the timestamp of the backup you want to restore")
+
+    # arguments for listing information
+    list_parser = subparser.add_parser("list", help="lists all the tracked files and their respective indexes or backups with their respective timestamps")
+    list_parser.add_argument("index", nargs="?", type=int, default=None, help="the index of the file whose backups you want to list, omit it to get a list of all tracked files")
+
+    # main cli logic
+    args = parser.parse_args()
+    match args.action:
+        case "create":
+            create_global_backup(args.path)
+            print(f"New backup created for file '{os.path.realpath(args.path)}'")
+
+        case "restore":
+            restore_global_backup(args.index, args.timestamp)
+            print(f"Backup with timestamp '{args.timestamp}' restored for file '{list_tracked_files(args.index)}'")
+
+        case "list":
+            if args.index is None:
+                tracked_list = list_tracked_files()
+                print("Showing list of tracked files:")
+                print("( backup index | file path )")
+                for file in tracked_list:
+                    print(f"{file['index']} | {file['path']}")
+            else:
+                backup_list = list_file_backups(args.index, reverse=True)
+                print("Showing backups for:")
+                print(f"  {args.index} | {list_tracked_files(args.index)}")
+                print("( timestamp | date )")
+                for backup in backup_list:
+                    print(f"{backup} | {date_from_ms(backup)}")
+
+
 if __name__ == "__main__":
-    import sys
-
-    # # create backup
-    # new_file = sys.argv[1]
-    # create_global_backup(new_file)
-
-    # # list backup
-    # print(list_tracked_files())
-    # print(list_file_backups(0, True))
-
-    # restore backup
-    backup_index = int(sys.argv[1])
-    timestamp = int(sys.argv[2])
-
-    restore_global_backup(backup_index, timestamp)
+    main()
