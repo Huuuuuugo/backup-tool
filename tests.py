@@ -1,10 +1,13 @@
 import tempfile
+import zipfile
 import shutil
 import random
 import string
 import os
 
-from backup import get_changes, apply_changes, Change, types
+import pytest
+
+from backup import get_changes, apply_changes, create_backup, restore_backup, Change, types, NoChangesException
 
 
 class TempFileHelper:
@@ -210,3 +213,43 @@ class TestCore:
                         shutil.copy(new_file_path, "./error_new_file.txt")
 
                         raise e
+
+    def test_create_backup(self):
+        """Test if the backup file is created properly."""
+        with TempFileHelper() as helper:
+            old_file_path = helper.create(b"initial file content")
+            new_file_path = helper.create(b"final file content")
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                backup_path = os.path.join(temp_dir, "backup")
+                create_backup(old_file_path, new_file_path, backup_path)
+
+                assert zipfile.is_zipfile(backup_path)
+
+    def test_create_backup_no_changes(self):
+        """Test if creating a backup with two files exactly equal raises `NoChangesException`."""
+        with TempFileHelper() as helper:
+            old_file_path = helper.create(b"same file content")
+            new_file_path = helper.create(b"same file content")
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                backup_path = os.path.join(temp_dir, "backup")
+
+                with pytest.raises(NoChangesException):
+                    create_backup(old_file_path, new_file_path, backup_path)
+
+    def test_restore_backup(self):
+        """Test if a backup file is restored properly."""
+        with TempFileHelper() as helper:
+            old_file_path = helper.create(b"initial file content")
+            new_file_path = helper.create(b"final file content")
+
+            with tempfile.TemporaryDirectory() as temp_dir:
+                backup_path = os.path.join(temp_dir, "backup")
+                create_backup(old_file_path, new_file_path, backup_path)
+
+                restore_backup(backup_path, old_file_path)
+
+                with open(old_file_path, "rb") as old_file:
+                    with open(new_file_path, "rb") as new_file:
+                        assert old_file.read() == new_file.read()
