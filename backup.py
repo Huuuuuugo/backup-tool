@@ -343,9 +343,58 @@ def restore_backup(backup_file: str, input_file: str, output_file: str | None = 
     apply_changes(changes, output_file)
 
 
-# TODO: add support for messages on backups
+def list_tracked_files(index: int | None = None):
+    tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
+    tracked_list = tracked_list_manger.read()["list"]
+
+    if index is not None:
+        for file in tracked_list:
+            if file["index"] == index:
+                return file["path"]
+
+    return tracked_list
+
+
+def list_file_backups(backup_index: int, reverse: bool = False):
+    tracked_list = list_tracked_files()
+
+    backup_list = []
+    for file in tracked_list:
+        if file["index"] == backup_index:
+            backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
+            backup_list = os.listdir(backups_dir)
+            backup_list = [int(backup) for backup in backup_list]
+
+    if not backup_list:
+        raise BackupNotFoundError(f"Backup with index '{backup_index}' does not exist.")
+
+    if reverse:
+        backup_list.reverse()
+    return backup_list
+
+
+def get_backup_message(backup_index: int, timestamp: int):
+    messages_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "messages.json")
+    messages_manager = JSONManager(messages_path, {})
+    messages_json = messages_manager.read()
+
+    try:
+        return messages_json[str(timestamp)]
+    except KeyError:
+        return ""
+
+
+def create_backup_message(backup_index: int, timestamp: int, message: str):
+    messages_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "messages.json")
+    messages_manager = JSONManager(messages_path, {})
+    messages_json = messages_manager.read()
+
+    messages_json.update({str(timestamp): message})
+    messages_manager.save(messages_json)
+
+
 # TODO: add support for using aliases instead of full paths
-def create_global_backup(file_path: str) -> None:
+def create_global_backup(file_path: str, message: str = "") -> None:
     file_path = os.path.realpath(file_path)  # get the normalized absolute path of the file
     timestamp = time.time_ns()  # get the timestamp of the backup
 
@@ -391,38 +440,12 @@ def create_global_backup(file_path: str) -> None:
         # copy temporary backup to its approrpiate path
         shutil.move(temp_bak_path, new_backup_path)
 
+    # save backup message
+    if message:
+        create_backup_message(backup_index, timestamp, message)
+
     # copy current version of the file to head
     shutil.copy(file_path, head_file_path)
-
-
-def list_tracked_files(index: int | None = None):
-    tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
-    tracked_list = tracked_list_manger.read()["list"]
-
-    if index is not None:
-        for file in tracked_list:
-            if file["index"] == index:
-                return file["path"]
-
-    return tracked_list
-
-
-def list_file_backups(backup_index: int, reverse: bool = False):
-    tracked_list = list_tracked_files()
-
-    backup_list = []
-    for file in tracked_list:
-        if file["index"] == backup_index:
-            backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
-            backup_list = os.listdir(backups_dir)
-            backup_list = [int(backup) for backup in backup_list]
-
-    if not backup_list:
-        raise BackupNotFoundError(f"Backup with index '{backup_index}' does not exist.")
-
-    if reverse:
-        backup_list.reverse()
-    return backup_list
 
 
 # TODO: create automatic backup when restoring with unsaved changes
@@ -464,21 +487,28 @@ def main():
     # arguments for creating backup
     create_parser = subparser.add_parser("create", help="creates a new backup")
     create_parser.add_argument("path", type=str, help="the path of the file being backed up")
+    create_parser.add_argument("message", nargs="?", type=str, help="message describing what changed")
 
     # arguments for restoring a backup
     restore_parser = subparser.add_parser("restore", help="restores a backup.")
     restore_parser.add_argument("index", type=int, help="the index of the file being restored")
-    restore_parser.add_argument("timestamp", type=int, help="the timestamp of the backup you want to restore")
+    restore_parser.add_argument("timestamp", type=int, default="", help="the timestamp of the backup you want to restore")
 
     # arguments for listing information
     list_parser = subparser.add_parser("list", help="lists all the tracked files and their respective indexes or backups with their respective timestamps")
     list_parser.add_argument("index", nargs="?", type=int, default=None, help="the index of the file whose backups you want to list, omit it to get a list of all tracked files")
 
+    # arguments for creating or updating a backup message
+    reword_parser = subparser.add_parser("reword", help="creates or updates a backup message")
+    reword_parser.add_argument("index", type=int, help="the index of the file being restored")
+    reword_parser.add_argument("timestamp", type=int, default="", help="the timestamp of the backup you want to restore")
+    reword_parser.add_argument("message", type=str, help="message describing what changed")
+
     # main cli logic
     args = parser.parse_args()
     match args.action:
         case "create":
-            create_global_backup(args.path)
+            create_global_backup(args.path, args.message)
             print(f"New backup created for file '{os.path.realpath(args.path)}'")
 
         case "restore":
@@ -497,8 +527,14 @@ def main():
                 print("Showing backups for:")
                 print(f"  {args.index} | {list_tracked_files(args.index)}")
                 print("( timestamp | date )")
-                for backup in backup_list:
-                    print(f"{backup} | {date_from_ms(backup)}")
+                for timestamp in backup_list:
+                    print(f"{timestamp} | {date_from_ms(timestamp)} | '{get_backup_message(args.index, timestamp)}'")
+
+        case "reword":
+            original_message = get_backup_message(args.index, args.timestamp)
+            create_backup_message(args.index, args.timestamp, args.message)
+
+            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp {args.timestamp} for file '{list_tracked_files(args.index)}'")
 
 
 if __name__ == "__main__":
