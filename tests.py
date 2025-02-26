@@ -7,7 +7,9 @@ import os
 
 import pytest
 
-from backup import get_changes, apply_changes, create_backup, restore_backup, Change, types, NoChangesException
+from backup import get_changes, apply_changes, create_backup, restore_backup, Change, BackupExceptions
+
+types = Change.ChangeTypes
 
 
 class TempFileHelper:
@@ -235,7 +237,7 @@ class TestCore:
             with tempfile.TemporaryDirectory() as temp_dir:
                 backup_path = os.path.join(temp_dir, "backup")
 
-                with pytest.raises(NoChangesException):
+                with pytest.raises(BackupExceptions.NoChangesException):
                     create_backup(old_file_path, new_file_path, backup_path)
 
     def test_restore_backup(self):
