@@ -486,11 +486,11 @@ def main():
 
     # arguments for creating backup
     create_parser = subparser.add_parser("create", help="creates a new backup")
-    create_parser.add_argument("path", type=str, help="the path of the file being backed up")
+    create_parser.add_argument("path_or_index", type=str, help="the path or backup index of the file being backed up")
     create_parser.add_argument("message", nargs="?", type=str, help="message describing what changed")
 
     # arguments for restoring a backup
-    restore_parser = subparser.add_parser("restore", help="restores a backup.")
+    restore_parser = subparser.add_parser("restore", help="restores a backup")
     restore_parser.add_argument("index", type=int, help="the index of the file being restored")
     restore_parser.add_argument("timestamp", type=int, default="", help="the timestamp of the backup you want to restore")
 
@@ -508,12 +508,14 @@ def main():
     args = parser.parse_args()
     match args.action:
         case "create":
-            create_global_backup(args.path, args.message)
-            print(f"New backup created for file '{os.path.realpath(args.path)}'")
+            if args.path_or_index.isdigit():
+                args.path_or_index = list_tracked_files(int(args.path_or_index))
+            create_global_backup(args.path_or_index, args.message)
+            print(f"New backup created for file '{os.path.realpath(args.path_or_index)}'")
 
         case "restore":
             restore_global_backup(args.index, args.timestamp)
-            print(f"Backup with timestamp '{args.timestamp}' restored for file '{list_tracked_files(args.index)}'")
+            print(f"Backup with timestamp '{args.timestamp}' and message \"{get_backup_message(args.index, args.timestamp)}\" restored for file '{list_tracked_files(args.index)}'")
 
         case "list":
             if args.index is None:
@@ -526,15 +528,15 @@ def main():
                 backup_list = list_file_backups(args.index, reverse=True)
                 print("Showing backups for:")
                 print(f"  {args.index} | {list_tracked_files(args.index)}")
-                print("( timestamp | date )")
+                print("( timestamp | date | message )")
                 for timestamp in backup_list:
-                    print(f"{timestamp} | {date_from_ms(timestamp)} | '{get_backup_message(args.index, timestamp)}'")
+                    print(f'{timestamp} | {date_from_ms(timestamp)} | "{get_backup_message(args.index, timestamp)}"')
 
         case "reword":
             original_message = get_backup_message(args.index, args.timestamp)
             create_backup_message(args.index, args.timestamp, args.message)
 
-            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp {args.timestamp} for file '{list_tracked_files(args.index)}'")
+            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp}' for file '{list_tracked_files(args.index)}'")
 
 
 if __name__ == "__main__":
