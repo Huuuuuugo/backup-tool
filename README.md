@@ -1,7 +1,7 @@
 # BackTrack: Simple Versioned Backups for Files Anywhere on the System
 BackTrack is a lightweight, command-line backup tool written in pure Python that lets you create timestamped versions of files anywhere on the system. Designed for simplicity and storage efficiency, it helps you track changes, restore previous states, and add context to backups with descriptive messages without worring about wasting storage space — perfect for users who want Git-like versioning on limited storage without the complexity of full VCS systems.
 
-Key Features:
+### Key Features
   - **Versioned Backups**: Automatically track file changes with incremental timestamps.
   
   - **Storage efficiency**: Save a compressed version containing only the changed portions of a file.
@@ -17,8 +17,20 @@ Key Features:
 
   - **CLI-First Design**: Simple commands for creating, restoring, and managing backups.
 
+### Ideal For
+  - Tracking configuration file changes
+
+  - Protecting against accidental edits
+
+  - Maintaining alternate versions of creative projects
+
+  - Users who want versioning without Git complexity
+
 ## Installation
-TODO
+Navigate to the project folder and run the following command to install all of the project dependencies:
+```console
+pip install -r requirements.txt
+```
 
 ## Usage
 ### General usage
