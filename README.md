@@ -86,7 +86,7 @@ Here's how you can use the `list` operation:
 ```console
 python backup.py list [index]
 ```
-The only argument here is an optional `index`, this referes to the **index of the file whose history you want to see**. If this argument is omitted, a **full list of tracked files and their indexes** is showed instead.
+The only argument here is an optional `index`, this referes to the **backup index of the tracked file whose history you want to see**. If this argument is omitted, a **full list of tracked files and their indexes** is shown instead.
 
 > [!TIP]
 > #### Example
@@ -167,7 +167,6 @@ The `timestamp_or_index` argument, on the other hand, is used to **identify the 
 > ```console
 > Backup with timestamp '1740670216326312000' and message "first backup" restored for file 'C:\VSCode\Python\backup\another_test_file.txt'
 > ```
-
 ----
 
 
@@ -175,8 +174,40 @@ The `timestamp_or_index` argument, on the other hand, is used to **identify the 
 > [!IMPORTANT] 
 > Make sure to read the [Listing backups](#listing-backups) section before proceeding.
 
-TODO
+> [!NOTE]
+> It's recommended to read the [Restoring backups](#restoring-backups) section before proceeding.
 
+To create or update the message from a backup, use:
+```console
+python backup.py reword <index> <timestamp_or_index> <message>
+```
+The `index` and `timestamp_or_index` work exactly the same way as in the `restore` operation:
+  - `index`: identifies the file being restored;
+  - `timestamp_or_index`: identifies the backup being restored;
+  - both values should be retrieved using the `list` operation as shown in the example from the [Listing backups](#listing-backups) section.
+
+> [!TIP]
+> #### Example
+> Going back to the example from the [Listing backups](#listing-backups) section, after using the `list` command we retrieved the following output:
+> ```console
+> Showing backups for:
+>   1 | C:\VSCode\Python\backup\another_test_file.txt
+> ( timestamp index | timestamp | date | message )
+> 0 | 1740670275737780000 | 2025-02-27 12:31:15 | "add even more text"
+> 1 | 1740670261325164000 | 2025-02-27 12:31:01 | "add some text"
+> 2 | 1740670216326312000 | 2025-02-27 12:30:16 | "first backup"
+> ```
+> Now, let's say you want to change the message of the latest backup "new message". Looking at the output we can see that the **backup index** is **1** and the **timestamp index** is **2**, to change the message, we can run:
+>
+> Input:
+> ```console
+> python backup.py reword 1 0 "new message"
+> ```
+>
+> Output:
+> ```console
+> Update message from 'add even more text' to 'new message' for backup with timestamp '1740670275737780000' for file 'C:\VSCode\Python\backup\another_test_file.txt'
+> ```
 ----
 
 
