@@ -7,7 +7,7 @@ TODO
 TODO
 
 ## Usage
-### General usage:
+### General usage
 ```console
 python backup.py <operation> [arguments]
 ```
@@ -76,6 +76,34 @@ The optional `message` argument expects a string to be associated with the backu
   - This message will be displayed alongside the backup when listing changes (see [Listing backups](#listing-backups) for more information).
    
   - This message can be altered at any time using the `reword` operation (see [Managing messages](#managing-messages) for more information).
+
+> [!TIP]
+> #### Example
+> Let's say you want to create the first backup of a file named `test_file.txt` located on the current working directory, to do so, you can run the following command:
+>
+> Input:
+> ```console
+> python backup.py test_file.txt
+> ```
+>
+> Output:
+> ```console
+> New backup created for file 'C:\VSCode\Python\backup\test_file.txt'
+> ```
+>
+> After this initial backup, you can now use the **backup index** of the tracked file for all subsequent backups (see [Listing backups](#listing-backups) for more information on how to retrieve this value):
+>
+> Input:
+> ```console
+> python backup.py 0
+> ```
+>
+> Output:
+> ```console
+> New backup created for file 'C:\VSCode\Python\backup\test_file.txt'
+> ```
+
+
 ----
 
 
