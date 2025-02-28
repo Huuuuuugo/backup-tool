@@ -4,7 +4,7 @@ BackTrack is a lightweight, command-line backup tool written in pure Python that
 ### Key Features
   - **Versioned Backups**: Automatically track file changes with incremental timestamps.
   
-  - **Storage efficiency**: Save a compressed version containing only the changed portions of a file.
+  - **Storage efficiency**: Reduce backup size by storing only modified file segments, compressed with high-ratio LZMA for optimal space savings.
 
   - **Global backups**: Create or restore backups from anywhere on the sytem.
 
