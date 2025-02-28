@@ -252,6 +252,15 @@ The `index` and `timestamp_or_index` work exactly the same way as in the `restor
 > ```
 ----
 
+### Migrating backups
+By default, BackTrack uses the `platformdirs` module to get the most appropriate place for backups depending on your operating system, but you may want to change it to a directory that's automatically synced to a cloud storage service, for example. To do that you can use the following command:
+```console
+python backup.py [new_dir]
+```
+The argument `new_dir`, as the name implies, expects the path of the new directory to where you want to move your backups. If this value is omitted, the backups will be moved back to the default location instead.
+
+----
+
 
 ## How it Works
 TODO
