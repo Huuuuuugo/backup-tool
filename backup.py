@@ -7,13 +7,25 @@ import time
 import io
 import os
 
+from platformdirs import user_data_dir
+
 from utils import JSONManager, date_from_ms
 
 
-BACKUP_DATA_DIR = os.path.realpath("./bak")
-os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
+USER_DATA_DIR = user_data_dir("BackTrack", "Huuuuuugo", ensure_exists=True)
+DEFAULT_BACKUP_DATA_DIR = os.path.join(USER_DATA_DIR, "backups")
 
-TRACKED_FILES_LIST_PATH = os.path.normpath(os.path.join(BACKUP_DATA_DIR, "tracked.json"))
+# get backup data dir
+NEW_DIR_FILE_PATH = os.path.join(USER_DATA_DIR, "new_dir.txt")
+if "new_dir.txt" in os.listdir(USER_DATA_DIR):
+    with open(NEW_DIR_FILE_PATH, "r", encoding="utf8") as new_dir_file:
+        BACKUP_DATA_DIR = new_dir_file.read()
+        os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
+else:
+    BACKUP_DATA_DIR = DEFAULT_BACKUP_DATA_DIR
+    os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
+
+TRACKED_FILES_LIST_PATH = os.path.realpath(os.path.join(BACKUP_DATA_DIR, "tracked.json"))
 
 
 class BackupExceptions:
@@ -520,6 +532,10 @@ def main():
     reword_parser.add_argument("timestamp_or_index", type=int, default="", help="the timestamp of the backup you want to restore")
     reword_parser.add_argument("message", type=str, help="message describing what changed")
 
+    # arguments for migrating backups to another directory
+    migrate_parser = subparser.add_parser("migrate", help="migrate all backups to some other directory")
+    migrate_parser.add_argument("new_dir", nargs="?", type=str, default=None, help="the path of the new directory, omit this to migrate back to the default directory")
+
     # main cli logic
     args = parser.parse_args()
     match args.action:
@@ -578,7 +594,21 @@ def main():
             create_backup_message(args.index, args.timestamp_or_index, args.message)
 
             # success message
-            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp_or_index}' for file '{list_tracked_files(args.index)}'")
+            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp_or_index}' from file '{list_tracked_files(args.index)}'")
+
+        case "migrate":
+            if args.new_dir is not None:
+                new_dir = os.path.realpath(args.new_dir)
+                shutil.move(BACKUP_DATA_DIR, new_dir)
+                with open(NEW_DIR_FILE_PATH, "w", encoding="utf8") as new_dir_file:
+                    new_dir_file.write(new_dir)
+
+                print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{new_dir}'")
+            else:
+                shutil.move(BACKUP_DATA_DIR, DEFAULT_BACKUP_DATA_DIR)
+                os.remove(NEW_DIR_FILE_PATH)
+
+                print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{DEFAULT_BACKUP_DATA_DIR}'")
 
 
 if __name__ == "__main__":
