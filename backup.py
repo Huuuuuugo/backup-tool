@@ -610,6 +610,9 @@ def main():
 
                 print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{DEFAULT_BACKUP_DATA_DIR}'")
 
+        case _:
+            parser.print_help()
+
 
 if __name__ == "__main__":
     main()
