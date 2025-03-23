@@ -27,25 +27,26 @@ BackTrack is a lightweight, command-line backup tool written in pure Python that
   - Users who want versioning without Git complexity
 
 ## Installation
-Navigate to the project folder and run the following command to install all of the project dependencies:
+Navigate to the project folder and run the following command to install it along all of its dependencies:
 ```console
-pip install -r requirements.txt
+pip install .
 ```
+This will make the command `bak` avaliable in your terminal.
 
 ## Usage
 ### General usage
 ```console
-python backup.py <operation> [arguments]
+bak <operation> [arguments]
 ```
 
 There are a few different operations BackTrack can perform, each one with it's own set of optional and required arguments. You can get a full list of them by simply using:
 ```console
-python backup.py -h
+bak -h
 ```
 
 Which should return something like this:
 ```console
-usage: backup.py [-h] {create,restore,list,reword} ...
+usage: bak [-h] {create,restore,list,reword} ...
 
 positional arguments:
   {create,restore,list,reword}
@@ -54,6 +55,7 @@ positional arguments:
     restore             restores a backup
     list                lists all the tracked files and their respective indexes or backups with their respective timestamps
     reword              creates or updates a backup message
+    migrate             migrate all backups to some other directory
 
 options:
   -h, --help            show this help message and exit
@@ -61,19 +63,19 @@ options:
 
 Furthermore, you can get a full list of the arguments an operation takes by running:
 ```console
-python backup.py <operation> -h
+bak <operation> -h
 ```
 
 Here's an example for the `create` operation:
 
 Input:
 ```console
-python backup.py create -h
+bak create -h
 ```
 
 Output:
 ```console
-usage: backup.py create [-h] path_or_index [message]
+usage: bak create [-h] path_or_index [message]
 
 positional arguments:
   path_or_index  the path or backup index of the file being backed up
@@ -88,7 +90,7 @@ options:
 ### Creating backups
 Before anything else, you'll need to know how to create backups. Here's how you can do it:
 ```console
-backup.py create <path_or_index> [message]
+bak create <path_or_index> [message]
 ```
 
 The required `path_or_index` argument, as the name implies, can be either a **string** containing the **full/relative path** to the file being backed up or a **integer** **index** representing that file. 
@@ -109,7 +111,7 @@ The optional `message` argument expects a string to be associated with the backu
 >
 > Input:
 > ```console
-> python backup.py test_file.txt
+> bak create test_file.txt
 > ```
 >
 > Output:
@@ -121,7 +123,7 @@ The optional `message` argument expects a string to be associated with the backu
 >
 > Input:
 > ```console
-> python backup.py 0
+> bak create 0
 > ```
 >
 > Output:
@@ -138,7 +140,7 @@ After creating a backup, you'll need to be able to reference it in order to actu
 
 Here's how you can use the `list` operation:
 ```console
-python backup.py list [index]
+bak list [index]
 ```
 The only argument here is an optional `index`, this referes to the **backup index of the tracked file whose history you want to see**. If this argument is omitted, a **full list of tracked files and their indexes** is shown instead.
 
@@ -150,7 +152,7 @@ The only argument here is an optional `index`, this referes to the **backup inde
 > 
 > Input:
 > ```console
-> python backup.py list
+> bak list
 > ```
 > 
 > Output:
@@ -165,7 +167,7 @@ The only argument here is an optional `index`, this referes to the **backup inde
 > 
 > Input:
 > ```console
-> python backup.py list 1
+> bak list 1
 > ```
 > 
 > Output:
@@ -189,7 +191,7 @@ The only argument here is an optional `index`, this referes to the **backup inde
 
 To restore a backup, use the following command:
 ```console
-python backup.py restore <index> <timestamp_or_index>
+bak restore <index> <timestamp_or_index>
 ```
 The `index` argument is used to **identify the file being restored**, it expects an integer containing the **backup index of a tracked file**. 
   - This value should be retrieved using the `list` operation as shown in the example from the [Listing backups](#listing-backups) section.
@@ -214,7 +216,7 @@ The `timestamp_or_index` argument, on the other hand, is used to **identify the 
 > 
 > Input:
 > ```console
-> python backup.py restore 1 2
+> bak restore 1 2
 > ```
 >
 > Output:
@@ -233,7 +235,7 @@ The `timestamp_or_index` argument, on the other hand, is used to **identify the 
 
 To create or update the message from a backup, use:
 ```console
-python backup.py reword <index> <timestamp_or_index> <message>
+bak reword <index> <timestamp_or_index> <message>
 ```
 The `index` and `timestamp_or_index` work exactly the same way as in the `restore` operation:
   - `index`: identifies the file being restored;
@@ -255,7 +257,7 @@ The `index` and `timestamp_or_index` work exactly the same way as in the `restor
 >
 > Input:
 > ```console
-> python backup.py reword 1 0 "new message"
+> bak reword 1 0 "new message"
 > ```
 >
 > Output:
@@ -267,7 +269,7 @@ The `index` and `timestamp_or_index` work exactly the same way as in the `restor
 ### Migrating backups
 By default, BackTrack uses the `platformdirs` module to get the most appropriate place for backups depending on your operating system, but you may want to change it to a directory that's automatically synced to a cloud storage service, for example. To do that you can use the following command:
 ```console
-python backup.py [new_dir]
+bak migrate [new_dir]
 ```
 The argument `new_dir`, as the name implies, expects the path of the new directory to where you want to move your backups. If this value is omitted, the backups will be moved back to the default location instead.
 
