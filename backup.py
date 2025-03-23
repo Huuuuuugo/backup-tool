@@ -1,6 +1,7 @@
 import argparse
 import tempfile
 import zipfile
+import hashlib
 import shutil
 import enum
 import time
@@ -29,6 +30,9 @@ TRACKED_FILES_LIST_PATH = os.path.realpath(os.path.join(BACKUP_DATA_DIR, "tracke
 
 
 class BackupExceptions:
+    class UnsavedChangesException(Exception):
+        """Indicates that no backup with the given timestamp exist"""
+
     class NoChangesException(Exception):
         """Indicates that the file being backed up hasn't changed"""
 
@@ -395,7 +399,7 @@ def get_backup_message(backup_index: int, timestamp: int):
     if timestamp not in backup_list:
         raise BackupExceptions.TimestampNotFound(f"A backup with timestamp '{timestamp}' does not exist for the file '{list_tracked_files(backup_index)}'")
 
-    # read the messages.json
+    # read messages.json
     messages_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "messages.json")
     messages_manager = JSONManager(messages_path, {})
     messages_json = messages_manager.read()
@@ -421,6 +425,21 @@ def create_backup_message(backup_index: int, timestamp: int, message: str):
     # save the new message to messages.json
     messages_json.update({str(timestamp): message})
     messages_manager.save(messages_json)
+
+
+def get_checksum(backup_index: int, timestamp: int):
+    # check if the given backup exists
+    backup_list = list_file_backups(backup_index)  # implicitly check if this backup index is being used
+    if timestamp not in backup_list:
+        raise BackupExceptions.TimestampNotFound(f"A backup with timestamp '{timestamp}' does not exist for the file '{list_tracked_files(backup_index)}'")
+
+    # read checksums.json
+    checksums_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "checksums.json")
+    checksums_manager = JSONManager(checksums_path, {})
+    checksums_json = checksums_manager.read()
+
+    # return the checksum associated with the backup
+    return checksums_json[str(timestamp)]
 
 
 def create_global_backup(file_path: str, message: str = "") -> None:
@@ -469,6 +488,20 @@ def create_global_backup(file_path: str, message: str = "") -> None:
         # copy temporary backup to its approrpiate path
         shutil.move(temp_bak_path, new_backup_path)
 
+    # save backup checksum
+    with open(file_path, "rb") as file:
+        # get checksum
+        checksum = hashlib.sha256(file.read()).hexdigest()
+
+        # read checksums.json
+        checksums_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "checksums.json")
+        checksums_manager = JSONManager(checksums_path, {})
+        checksums_json = checksums_manager.read()
+
+        # save the new checksum to checksums.json
+        checksums_json.update({str(timestamp): checksum})
+        checksums_manager.save(checksums_json)
+
     # save backup message
     if message:
         create_backup_message(backup_index, timestamp, message)
@@ -476,14 +509,36 @@ def create_global_backup(file_path: str, message: str = "") -> None:
     # copy current version of the file to head
     shutil.copy(file_path, head_file_path)
 
+    # update current timestamp
+    curr_timestamp_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "timestamp")
+    with open(curr_timestamp_path, "w") as curr_timestamp:
+        curr_timestamp.write(str(timestamp))
 
-# TODO: create automatic backup when restoring with unsaved changes
+
 # TODO: make it also work form newest to oldest backup
-def restore_global_backup(backup_index: int, timestamp: int) -> None:
+def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok: bool = False) -> None:
     # get path to the original file
     for file in list_tracked_files():
         if file["index"] == backup_index:
             file_path = file["path"]
+
+    # check if there's unsaved changes
+    if not unsaved_changes_ok:
+        # get checksum of the original file before being restored
+        with open(file_path, "rb") as original_file:
+            original_checksum = hashlib.sha256(original_file.read()).hexdigest()
+
+        # get current timestamp
+        curr_timestamp_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "timestamp")
+        with open(curr_timestamp_path, "r") as curr_timestamp_file:
+            curr_timestamp = int(curr_timestamp_file.read())
+
+        # get checksum of the current backup
+        backup_checksum = get_checksum(backup_index, curr_timestamp)
+
+        # check if the checksums are different
+        if original_checksum != backup_checksum:
+            raise BackupExceptions.UnsavedChangesException("The original file contains unsaved changes")
 
     # get dir where the backups are stored
     backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
@@ -505,6 +560,11 @@ def restore_global_backup(backup_index: int, timestamp: int) -> None:
             restore_backup(backup_path, temp_file)
 
         shutil.copy(temp_file, file_path)
+
+    # update current timestamp
+    curr_timestamp_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "timestamp")
+    with open(curr_timestamp_path, "w") as curr_timestamp:
+        curr_timestamp.write(str(timestamp))
 
 
 def main():
@@ -550,7 +610,8 @@ def main():
             # success message
             print(f"New backup created for file '{os.path.realpath(args.path_or_index)}'")
 
-        # TODO: warn about unsaved changes before overwriting the original file
+        # TODO: allow the user to restore even with unsaved changes
+        # TODO: improve error messages
         case "restore":
             # convert timestamp index into timestamp
             backup_list = list_file_backups(args.index, True)
@@ -608,7 +669,7 @@ def main():
                 shutil.move(BACKUP_DATA_DIR, DEFAULT_BACKUP_DATA_DIR)
                 os.remove(NEW_DIR_FILE_PATH)
 
-                print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{DEFAULT_BACKUP_DATA_DIR}'")
+                print(f"Successfully migrated backups from '{BACKUP_DATA_DIR}' to '{DEFAULT_BACKUP_DATA_DIR}'")
 
         case _:
             parser.print_help()
