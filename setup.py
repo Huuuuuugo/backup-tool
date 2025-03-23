@@ -4,8 +4,8 @@ from setuptools import setup
 setup(
     name="BackTrack",
     version="0.1",
-    description="simple tool for creating versioned delta backups",
     author="Huuuuuugo",
+    description="simple tool for creating versioned delta backups",
     url="https://github.com/Huuuuuugo/backup-tool",
     py_modules=["backup", "utils"],
     install_requires=["platformdirs"],
