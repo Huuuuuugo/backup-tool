@@ -1,3 +1,4 @@
+import threading
 import argparse
 import tempfile
 import zipfile
@@ -26,6 +27,7 @@ else:
     BACKUP_DATA_DIR = DEFAULT_BACKUP_DATA_DIR
     os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
 
+BACKUP_DATA_DIR = ".bak"
 TRACKED_FILES_LIST_PATH = os.path.realpath(os.path.join(BACKUP_DATA_DIR, "tracked.json"))
 
 
@@ -235,74 +237,173 @@ def get_changes(old_file_path: str, new_file_path: str) -> list[Change]:
     return changes
 
 
-# TODO: make it work on reverse (new_file to old_file)
-def apply_changes(changes: list[Change], file_path: str) -> None:
-    # separate the changed portion from the rest of the file
-    with open(file_path, "rb") as file:
+def apply_changes(changes: list[Change], file_path: str):
+    timer = time.perf_counter()
+
+    # apply a set of changes to a buffer containing only a section of the original file
+    # TODO: make it work on reverse (newer version to older version)
+    def apply_changes_worker(changes: list[Change], file_path: str, buffer_info: list[io.BytesIO, bool], next_change: Change) -> None:
+        buffer = buffer_info[0]
+
         # get first and last change
         first_change = changes[0]
         last_change = changes[-1]
 
-        # get unchanged portion on the beginning of the file
-        unchanged_start = file.read(first_change.position)
-
-        # get unchanged portion on the ending of the file
+        # get position of the last change
         ending_pos = last_change.position
         if last_change.type == types.RMV.value:
             ending_pos += last_change.size
-        file.seek(ending_pos)
-        unchanged_end = file.read()
 
-        # get the portion in the middle containing the bytes changed
-        file.seek(first_change.position)  # got to the position of the first change
-        changed_size = ending_pos - first_change.position
-        changed = io.BytesIO(file.read(changed_size))
-        changed.seek(0)
+        buffer_size = ending_pos - first_change.position
 
-    # apply changes sequentially
-    offset = 0
-    for change in changes:
-        bytes_changed = change.content
-        size = change.size
-        position = change.position - first_change.position + offset
-        change_type = change.type
+        # get the portion of the file where the changes need to be applied
+        with open(file_path, "rb") as file:
+            file.seek(first_change.position)
+            buffer.write(file.read(buffer_size))
+            buffer.seek(0)
 
-        match change_type:
-            case types.RMV.value:
-                # update offset
-                offset -= size
+        # apply changes sequentially
+        offset = 0
+        for change in changes:
+            bytes_changed = change.content
+            size = change.size
+            position = change.position - first_change.position + offset
+            change_type = change.type
 
-                # move to the position after the removed portion
-                changed.seek(position + size)
+            match change_type:
+                case types.RMV.value:
+                    # update offset
+                    offset -= size
 
-                # save the content from there onward
-                original_content = changed.read()
+                    # move to the position after the removed portion
+                    buffer.seek(position + size)
 
-                # move to the beggining of the removed portion and rewrite the content
-                changed.seek(position)
-                changed.write(original_content)
+                    # save the content from there onward
+                    original_content = buffer.read()
 
-            case types.ADD.value:
-                # update offset
-                offset += size
+                    # move to the beggining of the removed portion and rewrite the content
+                    buffer.seek(position)
+                    buffer.write(original_content)
 
-                # move to the position after the added portion
-                changed.seek(position)
+                case types.ADD.value:
+                    # update offset
+                    offset += size
 
-                # save the new content and everything from there onward
-                content = bytes_changed + changed.read()
+                    # move to the position after the added portion
+                    buffer.seek(position)
 
-                # move to the beggining of the removed portion and rewrite the content
-                changed.seek(position)
-                changed.write(content)
+                    # save the new content and everything from there onward
+                    content = bytes_changed + buffer.read()
 
-    # save changes to the file
-    with open(file_path, "wb") as file:
-        file.write(unchanged_start)
-        changed.seek(0)
-        file.write(changed.read(changed_size + offset))
-        file.write(unchanged_end)
-    changed.close()
+                    # move to the beggining of the removed portion and rewrite the content
+                    buffer.seek(position)
+                    buffer.write(content)
+
+        # get the unchanged section in between the last change of the current change set and first one of the next set
+        offset_betwen_changes = next_change.position - last_change.position
+        unchanged_between = io.BytesIO()
+        if offset_betwen_changes > 0:
+            with open(file_path, "rb") as file:
+                file.seek(last_change.position)
+                unchanged_between.write(file.read(offset_betwen_changes))
+                unchanged_between.seek(0)
+
+                # remove the portion that would be deleted by the last change
+                # TODO: remember to modify this, since it does not take into account changes of the "both" type and might cause issues when applying changes in reverse
+                if last_change.type == types.RMV.value:
+                    unchanged_between.seek(last_change.size)
+
+        # remove leftovers from the operations
+        buffer.truncate(buffer_size + offset)
+        buffer.seek(buffer_size + offset)
+
+        # append the unchanged section in between changes
+        buffer.write(unchanged_between.read())
+        unchanged_between.close()
+
+        # signalize that all necessary changes have been applied
+        buffer_info[1] = True
+
+    # apply the changes made by each worker thread to a temporary file in the correct order
+    def apply_changes_supervisor(buffers_list: list[list[io.BytesIO, bool]], file_path: str, first_change: Change, last_change: Change):
+        with tempfile.TemporaryDirectory(dir="") as temp_dir:
+            # get the unchanged portions of the original file
+            with open(file_path, "rb") as file:
+                # get unchanged portion on the beginning of the file
+                unchanged_start = file.read(first_change.position)
+
+                # get unchanged portion on the ending of the file
+                ending_pos = last_change.position
+                if last_change.type == types.RMV.value:
+                    ending_pos += last_change.size
+                file.seek(ending_pos)
+                unchanged_end = file.read()
+
+            # create a temporary file to save the changes
+            temp_file_path = os.path.join(temp_dir, "temp")
+            with open(temp_file_path, "wb") as temp:
+                # write the unchanged beginning
+                temp.write(unchanged_start)
+
+                while buffers_list:
+                    # get next buffer on the queue
+                    curr_buffer = buffers_list.pop(0)
+
+                    # wait for the buffer to be fully written
+                    while not curr_buffer[1]:
+                        time.sleep(0.01)
+
+                    # write the buffer to the original file
+                    curr_buffer[0].seek(0)
+                    temp.write(curr_buffer[0].read())
+                    curr_buffer[0].close()
+
+                # write the unchanged end
+                temp.write(unchanged_end)
+
+            # copy to the original file
+            shutil.copy(temp_file_path, file_path)
+
+    # split the changes into groups os 255 and set up a thread for each group
+    # then add them in sequence to a queue
+    buffers_list = []
+    thread_queue = []
+    thread_supervisor = threading.Thread(target=apply_changes_supervisor, args=(buffers_list, file_path, changes[0], changes[-1]), daemon=True)
+    while changes:
+        # setup the buffer and change set
+        change_set = changes[0:255]  # take the first 255 changes
+        changes_buffer = io.BytesIO()
+        buffer_info = [changes_buffer, False]  # the first value is the actual buffer and the second indicates if all changes have been applied
+        buffers_list.append(buffer_info)
+
+        # update the list of changes
+        changes = changes[255:]
+
+        # get the change that comes after the current set of changes
+        if changes:
+            next_change = changes[0]
+        else:
+            next_change = change_set[-1]
+
+        # set up the worker thread with the change_set, file_path (for reference when creating the buffer), buffer_info and next_change (to calculate and preserve the unchanged sections in between change sets)
+        thread = threading.Thread(target=apply_changes_worker, args=(change_set, file_path, buffer_info, next_change), daemon=True)
+        thread_queue.append(thread)
+
+    # start the supervisor thread to manage writes to the final file
+    thread_supervisor.start()
+
+    # start the worker threads allowing up to 20 concurrent ones (besides main and supervisor)
+    while thread_queue:
+        if threading.active_count() <= 22:
+            thread_queue.pop(0).start()
+        else:
+            time.sleep(0.01)
+
+    # wait for all threads to finish before ending
+    while threading.active_count() > 1:
+        time.sleep(0.01)
+
+    print(f"apply time: {time.perf_counter() - timer}")
 
 
 def create_backup(old_file: str, new_file: str, backup_file: str) -> None:
@@ -516,6 +617,7 @@ def create_global_backup(file_path: str, message: str = "") -> None:
 
 
 # TODO: make it also work form newest to oldest backup
+# FIXME: when restoring from a backup index that does not exist, the timestamp file will mistakenly save that index as if it was a timestamp
 def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok: bool = False) -> None:
     # get path to the original file
     for file in list_tracked_files():
@@ -611,6 +713,7 @@ def main():
             print(f"New backup created for file '{os.path.realpath(args.path_or_index)}'")
 
         # TODO: allow the user to restore even with unsaved changes
+        # TODO: update the warning on the readme about restoring files
         # TODO: improve error messages
         case "restore":
             # convert timestamp index into timestamp
