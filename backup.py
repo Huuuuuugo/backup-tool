@@ -11,7 +11,7 @@ import os
 
 from platformdirs import user_data_dir
 
-from utils import JSONManager, date_from_ms
+from utils import JSONManager, date_from_ms, get_tracked_path, timestamp_exists
 
 
 USER_DATA_DIR = user_data_dir("BackTrack", "Huuuuuugo", ensure_exists=True)
@@ -463,27 +463,48 @@ def restore_backup(backup_file: str, input_file: str, output_file: str | None = 
     apply_changes(changes, output_file)
 
 
-def list_tracked_files(backup_index: int | None = None):
+def list_tracked_files() -> list[dict]:
+    """Get a list containing all the tracked files and their corresponding backup indexes and paths.
+
+    Returns
+    -------
+    list[dict]
+        A list of dicts, each one representing a different tracked file.
+        Each dict is made out of two fields:
+            index: which contains the backup index of the tracked file;
+            path: which contains the absolute path of the tracked file.
+    """
     # read the list of tracked files inside tracked.json
     tracked_list_manger = JSONManager(TRACKED_FILES_LIST_PATH, {"last": -1, "list": []})
     tracked_list = tracked_list_manger.read()["list"]
 
     # return the entire list of tracked files if no index was specified
-    if backup_index is None:
-        return tracked_list
-
-    # return the path of the tracked file if the given backup index exists or raise exception if not
-    else:
-        for file in tracked_list:
-            if file["index"] == backup_index:
-                return file["path"]
-
-        raise BackupExceptions.BackupNotFoundError(f"Backup with index '{backup_index}' does not exist.")
+    return tracked_list
 
 
-def list_file_backups(backup_index: int, reverse: bool = False):
-    # implicitly check if this backup index is being used
-    list_tracked_files(backup_index)
+def list_file_backups(backup_index: int, reverse: bool = False) -> list[int]:
+    """Get a list containing all the timestamps of all the backups of a given tracked file.
+
+    Arguments
+    ---------
+    backup_index: int
+        The backup index of the file whose timestamps need to be retrieved.
+
+    reverse: bool, optional
+        By default, the returned list is sorted from oldest to newest backup. When this argument is set to True, the list will be reversed before being returned.
+
+    Returns
+    -------
+    list[int]
+        A list containing all the timestamps for every backup of the given tracked file ordered from oldest to newest or the other way around.
+
+    Raises
+    ------
+    BackupNotFoundError
+        If the given backup index doesn't correspond to any tracked file.
+    """
+    # implicitly check if the given backup index is being used
+    get_tracked_path(backup_index)
 
     # get the list of timestamps
     backups_dir = os.path.join(BACKUP_DATA_DIR, f"{backup_index}/changes/")
@@ -494,11 +515,32 @@ def list_file_backups(backup_index: int, reverse: bool = False):
     return backup_list
 
 
-def get_backup_message(backup_index: int, timestamp: int):
+def get_backup_message(backup_index: int, timestamp: int) -> str:
+    """Get the message of a given backup.
+
+    Arguments
+    ---------
+    backup_index: int
+        The backup index of the file to which the backup belongs.
+
+    timestamp: int
+        The timestamp of the backup whose message need to be retrieved.
+
+    Returns
+    -------
+    str
+        A string containing the message.
+
+    Raises
+    ------
+    TimestampNotFound
+        If the timestamp is not found within the given backup index.
+
+    BackupNotFoundError
+        If the given backup index doesn't corespond to any of the tracked files.
+    """
     # check if the given backup exists
-    backup_list = list_file_backups(backup_index)  # implicitly check if this backup index is being used
-    if timestamp not in backup_list:
-        raise BackupExceptions.TimestampNotFound(f"A backup with timestamp '{timestamp}' does not exist for the file '{list_tracked_files(backup_index)}'")
+    timestamp_exists(backup_index, timestamp)
 
     # read messages.json
     messages_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "messages.json")
@@ -512,11 +554,30 @@ def get_backup_message(backup_index: int, timestamp: int):
         return ""
 
 
-def create_backup_message(backup_index: int, timestamp: int, message: str):
+def create_backup_message(backup_index: int, timestamp: int, message: str) -> None:
+    """Update the message of a given backup.
+
+    Arguments
+    ---------
+    backup_index: int
+        The backup index of the file to which the backup belongs.
+
+    timestamp: int
+        The timestamp of the backup whose message need to be updated.
+
+    message: str
+        The new backup message.
+
+    Raises
+    ------
+    TimestampNotFound
+        If the timestamp is not found within the given backup index.
+
+    BackupNotFoundError
+        If the given backup index doesn't corespond to any of the tracked files.
+    """
     # check if the given backup exists
-    backup_list = list_file_backups(backup_index)  # implicitly check if this backup index is being used
-    if timestamp not in backup_list:
-        raise BackupExceptions.TimestampNotFound(f"A backup with timestamp '{timestamp}' does not exist for the file '{list_tracked_files(backup_index)}'")
+    timestamp_exists(backup_index, timestamp)
 
     # read messages.json
     messages_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "messages.json")
@@ -528,11 +589,32 @@ def create_backup_message(backup_index: int, timestamp: int, message: str):
     messages_manager.save(messages_json)
 
 
-def get_checksum(backup_index: int, timestamp: int):
+def get_checksum(backup_index: int, timestamp: int) -> str:
+    """Get the sha256 checksum of a given backup.
+
+    Arguments
+    ---------
+    backup_index: int
+        The backup index of the file to which the backup belongs.
+
+    timestamp: int
+        The timestamp of the backup whose checksum need to be retrieved.
+
+    Returns
+    -------
+    str
+        A string containing the sha256 checksum.
+
+    Raises
+    ------
+    TimestampNotFound
+        If the timestamp is not found within the given backup index.
+
+    BackupNotFoundError
+        If the given backup index doesn't corespond to any of the tracked files.
+    """
     # check if the given backup exists
-    backup_list = list_file_backups(backup_index)  # implicitly check if this backup index is being used
-    if timestamp not in backup_list:
-        raise BackupExceptions.TimestampNotFound(f"A backup with timestamp '{timestamp}' does not exist for the file '{list_tracked_files(backup_index)}'")
+    timestamp_exists(backup_index, timestamp)
 
     # read checksums.json
     checksums_path = os.path.join(BACKUP_DATA_DIR, str(backup_index), "checksums.json")
@@ -617,8 +699,10 @@ def create_global_backup(file_path: str, message: str = "") -> None:
 
 
 # TODO: make it also work form newest to oldest backup
-# FIXME: when restoring from a backup index that does not exist, the timestamp file will mistakenly save that index as if it was a timestamp
 def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok: bool = False) -> None:
+    # check if the given backup exists
+    timestamp_exists(backup_index, timestamp)
+
     # get path to the original file
     for file in list_tracked_files():
         if file["index"] == backup_index:
@@ -704,7 +788,7 @@ def main():
         case "create":
             # convert backup index into file path
             if args.path_or_index.isdigit():
-                args.path_or_index = list_tracked_files(int(args.path_or_index))
+                args.path_or_index = get_tracked_path(int(args.path_or_index))
 
             # run command
             create_global_backup(args.path_or_index, args.message)
@@ -725,7 +809,7 @@ def main():
             restore_global_backup(args.index, args.timestamp_or_index)
 
             # success message
-            print(f"Backup with timestamp '{args.timestamp_or_index}' and message \"{get_backup_message(args.index, args.timestamp_or_index)}\" restored for file '{list_tracked_files(args.index)}'")
+            print(f"Backup with timestamp '{args.timestamp_or_index}' and message \"{get_backup_message(args.index, args.timestamp_or_index)}\" restored for file '{get_tracked_path(args.index)}'")
 
         case "list":
             # list tracked files
@@ -740,7 +824,7 @@ def main():
             else:
                 backup_list = list_file_backups(args.index, reverse=True)
                 print("Showing backups for:")
-                print(f"  {args.index} | {list_tracked_files(args.index)}")
+                print(f"  {args.index} | {get_tracked_path(args.index)}")
                 print("( timestamp index | timestamp | date | message )")
                 i = 0
                 for timestamp in backup_list:
@@ -758,7 +842,7 @@ def main():
             create_backup_message(args.index, args.timestamp_or_index, args.message)
 
             # success message
-            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp_or_index}' from file '{list_tracked_files(args.index)}'")
+            print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp_or_index}' from file '{get_tracked_path(args.index)}'")
 
         case "migrate":
             if args.new_dir is not None:
