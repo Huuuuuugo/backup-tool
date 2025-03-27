@@ -27,7 +27,6 @@ else:
     BACKUP_DATA_DIR = DEFAULT_BACKUP_DATA_DIR
     os.makedirs(BACKUP_DATA_DIR, exist_ok=True)
 
-BACKUP_DATA_DIR = ".bak"
 TRACKED_FILES_LIST_PATH = os.path.realpath(os.path.join(BACKUP_DATA_DIR, "tracked.json"))
 
 
@@ -326,7 +325,7 @@ def apply_changes(changes: list[Change], file_path: str):
 
     # apply the changes made by each worker thread to a temporary file in the correct order
     def apply_changes_supervisor(buffers_list: list[list[io.BytesIO, bool]], file_path: str, first_change: Change, last_change: Change):
-        with tempfile.TemporaryDirectory(dir="") as temp_dir:
+        with tempfile.TemporaryDirectory() as temp_dir:
             # get the unchanged portions of the original file
             with open(file_path, "rb") as file:
                 # get unchanged portion on the beginning of the file
@@ -414,7 +413,7 @@ def create_backup(old_file: str, new_file: str, backup_file: str) -> None:
         raise BackupExceptions.NoChangesException("The file is exactly the same as the last backup.")
 
     # save instructions and changes to temporary files
-    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+    with tempfile.TemporaryDirectory() as temp_dir:
         temp_changes_path = os.path.join(temp_dir, "changes")
         temp_instructions_path = os.path.join(temp_dir, "instructions")
         with open(temp_instructions_path, "w") as instructions_file:
@@ -441,7 +440,7 @@ def restore_backup(backup_file: str, input_file: str, output_file: str | None = 
     if output_file is None:
         output_file = input_file
 
-    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+    with tempfile.TemporaryDirectory() as temp_dir:
         # extract files from the backup
         with zipfile.ZipFile(backup_file, "r") as backup_file:
             backup_file.extractall(path=temp_dir)
@@ -663,7 +662,7 @@ def create_global_backup(file_path: str, message: str = "") -> None:
         tracked_list_manager.save(tracked_list)
 
     # create a temporary backup file
-    with tempfile.TemporaryDirectory(dir=BACKUP_DATA_DIR) as temp_dir:
+    with tempfile.TemporaryDirectory() as temp_dir:
         # create backup
         temp_bak_path = os.path.join(temp_dir, "bak")
         create_backup(head_file_path, file_path, temp_bak_path)
@@ -737,7 +736,7 @@ def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok:
     backup_steps = backup_list[0 : i + 1]
 
     # apply all backups in sequence from oldest to newest
-    with tempfile.TemporaryDirectory(dir="") as temp_dir:
+    with tempfile.TemporaryDirectory() as temp_dir:
         # save changes to a temporary file
         temp_file = os.path.join(temp_dir, "temp")
         open(temp_file, "wb").close()
