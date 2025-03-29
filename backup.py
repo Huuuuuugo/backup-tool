@@ -733,6 +733,51 @@ def get_checksum(backup_index: int, timestamp: int) -> str:
 
 
 def create_global_backup(file_path: str, message: str = "") -> None:
+    """Create a globally accessible and automatically managed delta backup with version history.
+
+    This funtion uses the `create_backup` function to create a backup file following a set of restrictions that allows for a version history to be created and accesed from anywhere on the system.
+
+    In a folder specified by the `BACKUP_DATA_DIR` global variable, a file named `tracked.json` is created to link tracked files to their respective "backup index", which is an auto incrementing positive integer.
+    This index is used to reference a "backup folder" named after it, which stores all backups of a tracked file along with the relevant information about them.
+    Each "backup folder" is composed of the following files:
+    - a folder named "changes", where all the actual backup files are stored with their timestamp as the file name for easy reference;
+    - "checksums.json", where the sha264 checksums of each backup are stored and linked to their respective backup timestamp;
+    - "messages.json", where the messages of each backup are stored and linked to their respective backup timestamp;
+    - "timestamps", where the timestamp of the current active backup is stored for reference when looking up its checksum;
+    - "head", which stores a full copy of the last backed up version of the original file for quick lookup when creating a new backup.
+
+    In sumary, the folder structure of the global backups folder looks something like this:
+    ```
+    | 0/    # a backup folder named after the backup index of a tracked file
+    | | changes/    # a folder storing all the backup files
+    | | | 1743175897507    # a backup file created at March 28 2025 15:31:37.507 UTC
+    | | messages.json   # a file linking each backup message to its timestamp
+    | | checksums.json  # a file linking each backup checksum to its timestamp
+    | | timestamp       # a file storing the timestamp of the last active backup
+    | | head            # a file storing a full copy of the last backed version of the file
+    | tracked.json  # a file linking the full path of each tracked file to its backup index
+    ```
+
+    Parameters
+    ----------
+    file_path: str
+        The path of the file being backed up.
+
+    message: str, optional
+        A message describing the current backup.
+
+    Effects
+    -------
+    Create a backup file at the "changes" directory for the tracked file and update "head", "timestamp", "checksums.json" and "messages.json".
+
+    If the file being backed up doesn't have a backup index or backup folder yet, a backup index will be assigned to it and added to "tracked.json".
+    A backup folder will also be created along with all the other necessary files.
+
+    Raises
+    ------
+    NoChangesException
+        If the content of the file being backed up is exactly equal to the content from the last backup.
+    """
     file_path = os.path.realpath(file_path)  # get the normalized absolute path of the file
     timestamp = time.time_ns()  # get the timestamp of the backup
 
@@ -807,6 +852,43 @@ def create_global_backup(file_path: str, message: str = "") -> None:
 
 # TODO: make it also work form newest to oldest backup
 def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok: bool = False) -> None:
+    """Restore a backup created by the `create_global_backup` function.
+
+    See `create_global_backup`for more information on how global backups work.
+
+    This function starts by checking if the backup exists and the file being restored doesn't contain unsaved changes, which is done by comparing its checksum to the checksum of the current active backup, avoiding accidently overwriting any new data.
+    After that, it starts the reconstruction by geting a list of all the backups within the "changes" directory and searching for the one with the specified timestamp, this list is then sliced and only the timestamps necessary to reconstruct the target backup are left.
+    This new list is then iterated through and each backup is restored sequentially up until the target backup.
+    The function finishes by changing the value of the current active backup to the one that was just restored by updating the "timestamp" file.
+
+    Parameters
+    ----------
+    backup_index: str
+        The backup index of the file to which the backup belongs.
+
+    timestamp: int
+        The timestamp of the backup that's going to be restored.
+
+    unsaved_changes_ok: bool, optional
+        If set to True, the check for unsaved changes on the original file is ignored and the backup will forcibly overwrite whatever was there before.
+
+    Effects
+    -------
+    Restore a globally tracked file to a previously backed up state.
+
+    Update the value of the "timestamp" file to the timestamp of the backup restored.
+
+    Raises
+    ------
+    TimestampNotFound
+        If the timestamp is not found within the given backup index.
+
+    BackupNotFoundError
+        If the given backup index doesn't corespond to any of the tracked files.
+
+    UnsavedChangesException
+        If the file being restored contains unsaved changes.
+    """
     # check if the given backup exists
     timestamp_exists(backup_index, timestamp)
 
