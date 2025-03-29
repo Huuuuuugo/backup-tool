@@ -942,6 +942,36 @@ def restore_global_backup(backup_index: int, timestamp: int, unsaved_changes_ok:
         curr_timestamp.write(str(timestamp))
 
 
+def migrate_global_backups(new_dir: str | None = None) -> None:
+    """Move global backups to some other folder.
+
+    Parameters
+    ----------
+    new_dir: str, None, optional
+        The path of the folder to where the backups will be moved.
+        If omited, the backups will move back to the default directory.
+
+    Effects
+    -------
+    Moves all the global backups to the specified folder.
+
+    Creates a file named "new_dir.txt" inside the original directory to reference the new directory.
+
+    Deletes the "new_dir.txt" file if moving back to the default directory instead.
+    """
+    # move backups to the new directory
+    if new_dir is not None:
+        new_dir = os.path.realpath(new_dir)
+        shutil.move(BACKUP_DATA_DIR, new_dir)
+        with open(NEW_DIR_FILE_PATH, "w", encoding="utf8") as new_dir_file:
+            new_dir_file.write(new_dir)
+
+    # move backups to the default location if new_dir is None
+    else:
+        shutil.move(BACKUP_DATA_DIR, DEFAULT_BACKUP_DATA_DIR)
+        os.remove(NEW_DIR_FILE_PATH)
+
+
 def main():
     # arguments setup
     parser = argparse.ArgumentParser()
@@ -1034,17 +1064,11 @@ def main():
             print(f"Update message from '{original_message}' to '{args.message}' for backup with timestamp '{args.timestamp_or_index}' from file '{get_tracked_path(args.index)}'")
 
         case "migrate":
+            migrate_global_backups(args.new_dir)
+
             if args.new_dir is not None:
-                new_dir = os.path.realpath(args.new_dir)
-                shutil.move(BACKUP_DATA_DIR, new_dir)
-                with open(NEW_DIR_FILE_PATH, "w", encoding="utf8") as new_dir_file:
-                    new_dir_file.write(new_dir)
-
-                print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{new_dir}'")
+                print(f"Successfully migrate backups from '{BACKUP_DATA_DIR}' to '{os.path.abspath(args.new_dir)}'")
             else:
-                shutil.move(BACKUP_DATA_DIR, DEFAULT_BACKUP_DATA_DIR)
-                os.remove(NEW_DIR_FILE_PATH)
-
                 print(f"Successfully migrated backups from '{BACKUP_DATA_DIR}' to '{DEFAULT_BACKUP_DATA_DIR}'")
 
         case _:
